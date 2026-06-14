@@ -1,0 +1,559 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>STRUDEL // NEON GRID</title>
+
+    <!-- Strudel REPL web component (the same editor as strudel.cc) -->
+    <script src="https://unpkg.com/@strudel/repl@latest"></script>
+
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #05060a3a;
+        --panel: #0a0e1646;
+        --cyan: #00f0ff;
+        --magenta: #ff2bd6;
+        --line: #16202e;
+        --text: #c8d6e5;
+        --dim: #5a6b82;
+      }
+      * { box-sizing: border-box; }
+      html, body { height: 100%; }
+      body {
+        margin: 0;
+        font-family: "JetBrains Mono", "Cascadia Code", ui-monospace, "Consolas", monospace;
+        background:
+          radial-gradient(1200px 600px at 80% -10%, rgba(255,43,214,0.10), transparent 60%),
+          radial-gradient(1000px 500px at 0% 110%, rgba(0,240,255,0.10), transparent 60%),
+          var(--bg);
+        color: var(--text);
+      }
+      /* scanline overlay */
+      body::after {
+        content: "";
+        position: fixed;
+        inset: 0;
+        pointer-events: none;
+        background: repeating-linear-gradient(
+          to bottom,
+          rgba(0,0,0,0) 0px,
+          rgba(0,0,0,0) 2px,
+          rgba(0,0,0,0.18) 3px,
+          rgba(0,0,0,0) 4px
+        );
+        z-index: 9999;
+        mix-blend-mode: overlay;
+      }
+      header {
+        padding: 22px 26px 18px;
+        border-bottom: 1px solid var(--line);
+        background: linear-gradient(180deg, rgba(0,240,255,0.04), transparent);
+      }
+      .title {
+        font-size: 22px;
+        font-weight: 700;
+        letter-spacing: 0.28em;
+        margin: 0;
+        color: var(--cyan);
+        text-shadow: 0 0 8px rgba(0,240,255,0.55), 0 0 22px rgba(0,240,255,0.25);
+      }
+      .title span { color: var(--magenta); text-shadow: 0 0 8px rgba(255,43,214,0.55); }
+      .sub {
+        margin: 8px 0 0;
+        font-size: 12px;
+        letter-spacing: 0.18em;
+        text-transform: uppercase;
+        color: var(--dim);
+      }
+      .sub a { color: var(--cyan); text-decoration: none; border-bottom: 1px solid rgba(0,240,255,0.3); }
+      .sub kbd {
+        background: #0c1422;
+        border: 1px solid var(--line);
+        border-bottom-color: var(--cyan);
+        border-radius: 3px;
+        padding: 1px 7px;
+        font-size: 11px;
+        color: var(--cyan);
+      }
+      main { padding: 18px 26px 48px; max-width: 1280px; margin: 0 auto; }
+      .frame {
+        position: relative;
+        border: 1px solid var(--line);
+        border-radius: 4px;
+        background: var(--panel);
+        box-shadow:
+          0 0 0 1px rgba(0,240,255,0.06),
+          0 0 40px rgba(0,240,255,0.06) inset,
+          0 0 60px rgba(255,43,214,0.05);
+        overflow: hidden;
+      }
+      /* corner brackets */
+      .frame::before, .frame::after {
+        content: "";
+        position: absolute;
+        width: 14px; height: 14px;
+        border: 2px solid var(--magenta);
+        z-index: 2;
+      }
+      .frame::before { top: 6px; left: 6px; border-right: 0; border-bottom: 0; }
+      .frame::after  { bottom: 6px; right: 6px; border-left: 0; border-top: 0; }
+      strudel-editor {
+        display: block;
+        opacity: var(--editor-opacity, 1);
+        transition: opacity 0.12s linear;
+      }
+      .hint {
+        font-size: 12px;
+        color: var(--dim);
+        margin-top: 18px;
+        line-height: 1.8;
+        letter-spacing: 0.04em;
+      }
+      .hint code {
+        color: var(--magenta);
+        background: #0c1422;
+        padding: 1px 5px;
+        border-radius: 3px;
+        border: 1px solid var(--line);
+      }
+      .prompt { color: var(--cyan); }
+
+      /* file toolbar */
+      .toolbar {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin-bottom: 12px;
+        flex-wrap: wrap;
+      }
+      .toolbar button {
+        font: inherit;
+        font-size: 12px;
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+        color: var(--cyan);
+        background: #0a1320;
+        border: 1px solid var(--line);
+        border-bottom-color: rgba(0, 240, 255, 0.4);
+        padding: 7px 14px;
+        border-radius: 3px;
+        cursor: pointer;
+        transition: box-shadow 0.15s, border-color 0.15s, transform 0.05s;
+      }
+      .toolbar button:hover {
+        border-color: var(--cyan);
+        box-shadow: 0 0 12px rgba(0, 240, 255, 0.35), 0 0 2px rgba(0, 240, 255, 0.6) inset;
+      }
+      .toolbar button:active { transform: translateY(1px); }
+      .slider-ctl {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 11px;
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+        color: var(--dim);
+      }
+      .slider-ctl input[type="range"] {
+        width: 96px;
+        accent-color: var(--cyan);
+        cursor: pointer;
+      }
+      .file-status {
+        margin-left: auto;
+        display: inline-flex;
+        align-items: center;
+        gap: 9px;
+        font-size: 12px;
+        letter-spacing: 0.08em;
+        color: var(--dim);
+      }
+      #file-name { color: var(--text); }
+      #dirty-dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: transparent;
+        border: 1px solid var(--dim);
+      }
+      #dirty-dot.dirty {
+        background: var(--magenta);
+        border-color: var(--magenta);
+        box-shadow: 0 0 10px rgba(255, 43, 214, 0.7);
+      }
+
+      /* live syntax-error bar */
+      .syntax-bar {
+        margin-bottom: 12px;
+        padding: 8px 12px;
+        border: 1px solid var(--magenta);
+        border-left-width: 3px;
+        border-radius: 3px;
+        background: rgba(255, 43, 214, 0.07);
+        color: var(--magenta);
+        font-size: 12px;
+        letter-spacing: 0.04em;
+        text-shadow: 0 0 8px rgba(255, 43, 214, 0.35);
+        white-space: pre-wrap;
+        word-break: break-word;
+      }
+      .syntax-bar[hidden] { display: none; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1 class="title">STRUDEL <span>//</span> NEON GRID</h1>
+      <p class="sub">
+        <span class="prompt">&gt;</span>
+        <kbd>Ctrl</kbd>+<kbd>Enter</kbd> run &nbsp; <kbd>Ctrl</kbd>+<kbd>.</kbd> halt
+        &nbsp;·&nbsp; ref:
+        <a href="https://strudel.cc/learn/" target="_blank" rel="noreferrer">strudel.cc/learn</a>
+      </p>
+    </header>
+
+    <main>
+      <div class="toolbar">
+        <button id="btn-new" type="button" title="New pattern">New</button>
+        <button id="btn-open" type="button" title="Open a file (Ctrl+O)">Open</button>
+        <button id="btn-save" type="button" title="Save (Ctrl+S)">Save</button>
+        <button id="btn-saveas" type="button" title="Save As (Ctrl+Shift+S)">Save As</button>
+        <label class="slider-ctl" title="Editor transparency — see the background through the editor">
+          <span>Opacity</span>
+          <input id="opacity-slider" type="range" min="0.3" max="1" step="0.05" value="1" />
+        </label>
+        <span class="file-status">
+          <span id="file-name">untitled</span>
+          <span id="dirty-dot" title="unsaved changes"></span>
+          <span id="file-msg"></span>
+        </span>
+      </div>
+
+      <div class="syntax-bar" id="syntax-bar" hidden></div>
+
+      <div class="frame">
+        <!-- The pattern lives inside this HTML comment. Edit it live in the page. -->
+        <strudel-editor>
+<!--
+// NEON GRID — dark acid techno. Ctrl+Enter to run.
+stack(
+  // four-on-the-floor kick
+  sound("bd*4").bank("RolandTR909").gain(0.9),
+
+  // off-beat clap, drenched in reverb
+  sound("~ cp ~ cp").bank("RolandTR909").room(0.35),
+
+  // skittering 16th hats, panned and breathing
+  sound("hh*16").bank("RolandTR909")
+    .gain(saw.range(0.2, 0.6).fast(2))
+    .pan(sine.fast(4)),
+
+  // acid bassline — sweeping resonant filter + grit
+  note("<c2 c2 eb2 g1>*4").sound("sawtooth")
+    .lpf(sine.range(220, 2000).slow(8)).lpq(10)
+    .distort(1.2).gain(0.7),
+
+  // cold arpeggio, bit-crushed with delay
+  note("c4 eb4 g4 bb4 c5 g4 eb4 bb4".fast(2)).sound("square")
+    .crush(6).room(0.5).delay(0.4).gain(0.45)
+).cpm(132)
+-->
+        </strudel-editor>
+      </div>
+
+      <p class="hint">
+        <span class="prompt">&gt;</span> click once to arm audio, then run with Ctrl+Enter.
+        autocomplete is live: start typing a function and pick from the menu, or hit
+        <kbd>Ctrl</kbd>+<kbd>Space</kbd> to summon it. each entry shows the doc + examples.
+        <br />
+        <span class="prompt">&gt;</span> files: <kbd>Ctrl</kbd>+<kbd>O</kbd> open ·
+        <kbd>Ctrl</kbd>+<kbd>S</kbd> save (writes back to the same file) ·
+        <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>S</kbd> save as ·
+        <kbd>Ctrl</kbd>+<kbd>Z</kbd> undo. the magenta dot = unsaved changes.
+        <br />
+        <span class="prompt">&gt;</span> push it darker: swap <code>RolandTR909</code> for <code>RolandTR808</code>,
+        raise the grit with <code>.crush(4)</code>, bend the bass with <code>.lpq(20)</code>,
+        or drop the tempo with <code>.cpm(124)</code>.
+      </p>
+    </main>
+
+    <script>
+      // File open/save + autocomplete wiring for the embedded Strudel editor.
+      //
+      // The <strudel-editor> web component creates its StrudelMirror instance lazily
+      // (in connectedCallback, deferred via setTimeout) and exposes it as `.editor`.
+      // That instance gives us `editor.code` (current text, kept in sync) and
+      // `editor.setCode(text)` (load text). Undo/redo (Ctrl+Z / Ctrl+Shift+Z) is
+      // handled inside CodeMirror itself.
+      (function () {
+        "use strict";
+
+        var host = document.querySelector("strudel-editor");
+        // File System Access API = real open/save back to the same file on disk.
+        // Supported in Chromium browsers (Chrome/Edge). Firefox falls back to
+        // upload (open) and download (save).
+        var supportsFS = typeof window.showOpenFilePicker === "function";
+
+        var fileHandle = null; // FileSystemFileHandle once a real file is open
+        var lastSaved = null; // editor text as of last open/save (dirty baseline)
+        var fileName = "untitled";
+
+        var els = {
+          name: document.getElementById("file-name"),
+          dot: document.getElementById("dirty-dot"),
+          msg: document.getElementById("file-msg"),
+          newBtn: document.getElementById("btn-new"),
+          open: document.getElementById("btn-open"),
+          save: document.getElementById("btn-save"),
+          saveAs: document.getElementById("btn-saveas"),
+          syntax: document.getElementById("syntax-bar"),
+          opacity: document.getElementById("opacity-slider"),
+        };
+
+        // Minimal scaffold for a fresh pattern (audible, not blank).
+        var NEW_TEMPLATE = '// new pattern — Ctrl+Enter to run\nsound("bd*4").bank("RolandTR909")\n';
+
+        var fileTypes = [
+          {
+            description: "Strudel / JavaScript",
+            accept: { "text/javascript": [".js", ".txt", ".strudel"] },
+          },
+        ];
+
+        var msgTimer;
+        function setStatus(text, isError) {
+          if (!els.msg) return;
+          els.msg.textContent = text || "";
+          els.msg.style.color = isError ? "var(--magenta)" : "var(--dim)";
+          clearTimeout(msgTimer);
+          if (text) msgTimer = setTimeout(function () { els.msg.textContent = ""; }, 6000);
+        }
+
+        function getCode() { return host.editor ? host.editor.code : ""; }
+        function setCode(text) {
+          if (!host.editor) throw new Error("editor not ready yet — wait a moment and retry");
+          host.editor.setCode(text);
+        }
+
+        // If a pattern is currently playing, re-evaluate so a save hot-reloads the
+        // running sound immediately (no manual stop/run). Strudel updates a running
+        // pattern in place. No-op when nothing is playing.
+        function reevaluateIfPlaying() {
+          try {
+            var ed = host.editor;
+            if (ed && ed.repl && ed.repl.scheduler && ed.repl.scheduler.started) {
+              ed.evaluate();
+            }
+          } catch (err) {
+            console.error(err);
+          }
+        }
+
+        function isDirty() { return lastSaved !== null && getCode() !== lastSaved; }
+
+        // Lightweight live syntax check. Strudel patterns are valid JavaScript
+        // (mini-notation lives inside strings), so parsing with `new Function`
+        // catches the structural mistakes — unbalanced parens/brackets, missing
+        // commas — that otherwise fail silently while the last good pattern keeps
+        // playing. Non-blocking: it only shows a bar, never stops you from running.
+        function checkSyntax() {
+          if (!els.syntax) return;
+          try {
+            new Function(getCode());
+            els.syntax.hidden = true;
+            els.syntax.textContent = "";
+          } catch (e) {
+            if (e instanceof SyntaxError) {
+              els.syntax.hidden = false;
+              els.syntax.textContent = "// syntax error — " + e.message;
+            } else {
+              els.syntax.hidden = true;
+            }
+          }
+        }
+
+        function setFileName(name) {
+          fileName = name;
+          els.name.textContent = name;
+          refreshDirty();
+        }
+
+        function refreshDirty() {
+          var dirty = isDirty();
+          els.dot.classList.toggle("dirty", dirty);
+          document.title = (dirty ? "* " : "") + fileName + " — STRUDEL // NEON GRID";
+        }
+
+        function newFile() {
+          if (isDirty() && !window.confirm("Discard unsaved changes and start a new pattern?")) {
+            return;
+          }
+          setCode(NEW_TEMPLATE);
+          fileHandle = null;
+          lastSaved = NEW_TEMPLATE;
+          setFileName("untitled");
+        }
+
+        async function openFile() {
+          try {
+            if (supportsFS) {
+              var picked = await window.showOpenFilePicker({ multiple: false });
+              fileHandle = picked[0];
+              var text = await (await fileHandle.getFile()).text();
+              setCode(text);
+              lastSaved = text;
+              setFileName(fileHandle.name);
+              setStatus("opened " + fileHandle.name);
+            } else {
+              openFileFallback();
+            }
+          } catch (err) {
+            if (err && err.name !== "AbortError") {
+              console.error(err);
+              setStatus("open failed: " + (err && err.message ? err.message : err), true);
+            }
+          }
+        }
+
+        async function saveFile() {
+          try {
+            if (!supportsFS) return saveFallback();
+            if (!fileHandle) return saveAsFile();
+            var code = getCode();
+            var w = await fileHandle.createWritable();
+            await w.write(code);
+            await w.close();
+            lastSaved = code;
+            refreshDirty();
+            setStatus("saved " + fileName);
+            reevaluateIfPlaying();
+          } catch (err) {
+            if (err && err.name !== "AbortError") {
+              console.error(err);
+              setStatus("save failed: " + (err && err.message ? err.message : err), true);
+            }
+          }
+        }
+
+        async function saveAsFile() {
+          try {
+            if (!supportsFS) return saveFallback();
+            fileHandle = await window.showSaveFilePicker({
+              suggestedName: fileName === "untitled" ? "my-pattern.js" : fileName,
+              types: fileTypes,
+            });
+            var code = getCode();
+            var w = await fileHandle.createWritable();
+            await w.write(code);
+            await w.close();
+            lastSaved = code;
+            setFileName(fileHandle.name);
+            setStatus("saved " + fileHandle.name);
+            reevaluateIfPlaying();
+          } catch (err) {
+            if (err && err.name !== "AbortError") {
+              console.error(err);
+              setStatus("save failed: " + (err && err.message ? err.message : err), true);
+            }
+          }
+        }
+
+        // --- Fallbacks for browsers without the File System Access API (Firefox) ---
+        function openFileFallback() {
+          var input = document.createElement("input");
+          input.type = "file";
+          input.accept = ".js,.txt,.strudel,text/plain,text/javascript";
+          input.onchange = function () {
+            var f = input.files[0];
+            if (!f) return;
+            var reader = new FileReader();
+            reader.onload = function () {
+              var text = String(reader.result);
+              setCode(text);
+              lastSaved = text;
+              setFileName(f.name);
+            };
+            reader.readAsText(f);
+          };
+          input.click();
+        }
+        function saveFallback() {
+          var code = getCode();
+          var blob = new Blob([code], { type: "text/javascript" });
+          var a = document.createElement("a");
+          a.href = URL.createObjectURL(blob);
+          a.download = fileName === "untitled" ? "my-pattern.js" : fileName;
+          a.click();
+          URL.revokeObjectURL(a.href);
+          lastSaved = code; // optimistic: assume the download dialog succeeded
+          refreshDirty();
+          reevaluateIfPlaying();
+        }
+
+        els.newBtn.addEventListener("click", newFile);
+        els.open.addEventListener("click", openFile);
+        els.save.addEventListener("click", saveFile);
+        els.saveAs.addEventListener("click", saveAsFile);
+
+        // Transparency slider: dial the editor's opacity so the animated
+        // background shows through.
+        if (els.opacity) {
+          els.opacity.addEventListener("input", function () {
+            document.documentElement.style.setProperty("--editor-opacity", els.opacity.value);
+          });
+        }
+
+        // Ctrl+S save, Ctrl+Shift+S save-as, Ctrl+O open. Capture phase + preventDefault
+        // so the browser's own save/open dialogs never appear.
+        window.addEventListener(
+          "keydown",
+          function (e) {
+            if (!(e.ctrlKey || e.metaKey)) return;
+            var k = e.key.toLowerCase();
+            if (k === "s") {
+              e.preventDefault();
+              e.shiftKey ? saveAsFile() : saveFile();
+            } else if (k === "o") {
+              e.preventDefault();
+              openFile();
+            }
+          },
+          true
+        );
+
+        // Warn before leaving with unsaved changes.
+        window.addEventListener("beforeunload", function (e) {
+          if (isDirty()) {
+            e.preventDefault();
+            e.returnValue = "";
+          }
+        });
+
+        // Wait for the lazily-created editor instance, then finish setup.
+        (function whenReady(attempt) {
+          attempt = attempt || 0;
+          var editor = host && host.editor;
+          if (editor) {
+            // Enable Strudel's docs-driven autocompletion (shipped but off by default).
+            if (typeof editor.setAutocompletionEnabled === "function") {
+              editor.setAutocompletionEnabled(true);
+            } else if (typeof editor.updateSettings === "function") {
+              editor.updateSettings({ isAutoCompletionEnabled: true });
+            }
+            // Establish the dirty baseline, then watch for edits.
+            lastSaved = editor.code;
+            refreshDirty();
+            checkSyntax();
+            setInterval(function () {
+              refreshDirty();
+              checkSyntax();
+            }, 400);
+            return;
+          }
+          if (attempt < 200) setTimeout(function () { whenReady(attempt + 1); }, 100);
+        })();
+      })();
+    </script>
+  </body>
+</html>
