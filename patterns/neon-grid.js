@@ -1,4 +1,4 @@
-// NEON GRID — dark acid techno. Open me with Ctrl+O, then Ctrl+Enter to run.
+// NEON GRID - dark acid techno. Open me with Ctrl+O, then Ctrl+Enter to run.
 stack(
   // four-on-the-floor kick
   sound("bd*4").bank("RolandTR909").gain(0.9),
@@ -9,21 +9,21 @@ stack(
 
   sound("<~*16 ht*16>").bank("RolandTR909").room(0.50).gain(0.05)
   .lpf(sine.range(220, 300).slow(5)).delay(1)
-    .distort(0.2).pan("<0 1>".fast(1))._scope(),
+    .distort(0.2).pan("<0 1>*1.5".fast(1))._scope("#0c1422"),
 
   // skittering 16th hats, panned and breathing
   sound("hh*16").bank("RolandTR909")
     .gain(saw.range(0.2, 0.6).fast(2))
     .pan(sine.fast(4)),
 
-  // acid bassline — sweeping resonant filter + grit
+  // acid bassline - sweeping resonant filter + grit
   // note("<c2 c2 eb2 g1>*4").sound("sawtooth")
   //   .lpf(sine.range(220, 300).slow(8)).lpq(10)
   //   .distort(0.2).lfo(8/4).gain(0.7),
   
   note("c1 <c2 <eb2 <g2 g1>>>".fast(2))
 .sound("[square, triangle, sine]").gain(0.5)
-._scope(),
+.scope(),
 
   // cold arpeggio, bit-crushed with delay
   // note("c3 eb3 g3 bb3 c4 g3 eb3 bb3".fast(2)).sound("square")

@@ -17,8 +17,9 @@ Open the URL it prints. You'll get the full Strudel editor with a starter beat.
 
 - **Ctrl + Enter** — play / update the pattern
 - **Ctrl + .** — stop
-- **Ctrl + Space** — autocomplete (or just start typing a function name). Suggestions
-  come from Strudel's own function docs, so each entry shows a description and examples.
+- **Ctrl + Space** (or the **Functions** button) — the function browser: a categorized,
+  searchable autocomplete. Pick a category then a function, or type to search across all of
+  them. Each entry shows a description + example and inserts the call at your cursor.
 - Edit the code live; re-run with Ctrl+Enter to hear changes.
 
 ## Saving your work
@@ -41,6 +42,28 @@ syntax highlighting and works with normal dev tools. There's a starter file at
 [`patterns/neon-grid.js`](patterns/neon-grid.js) you can open immediately. (`.txt` and
 `.strudel` are also accepted if you prefer.)
 
+## Samples
+
+A bunch of sample packs are **preloaded** at startup (via Strudel's prebake), so named
+sounds work with no setup:
+
+- **Dirt-Samples** — `bd sd hh cp ...` (the classic TidalCycles set): `s("bd sd, hh*16")`
+- **Drum machines** — `.bank("RolandTR909")`, `.bank("RolandTR808")`, ...
+- Plus **piano**, **vcsl**, **mridangam**, **uzu-drumkit**
+
+To load an **extra pack from GitHub**, call `samples()` once with a `github:user/repo`
+(the repo needs a `strudel.json` manifest):
+
+```js
+samples('github:tidalcycles/dirt-samples')
+s("bd sd, ~ cp, hh*8")
+```
+
+Important: `samples()` downloads **asynchronously**. The first `Ctrl+Enter` starts the
+download and may be **silent** — press `Ctrl+Enter` again once it's fetched and it plays.
+If something goes wrong, the error now shows in the toolbar status (next to the filename)
+instead of failing silently. See [`patterns/samples-demo.js`](patterns/samples-demo.js).
+
 ## Where to edit
 
 The starter pattern lives inside `index.html` (in the `<strudel-editor>` block), but
@@ -48,6 +71,10 @@ the easiest way to experiment is to just type directly in the editor in the brow
 
 ## Learn more
 
+- **`strudel-vault/`** — a learning vault (Obsidian) written for people coming from a DAW
+  like Ableton. Open that folder as an Obsidian vault and start at `Start Here.md` (or just
+  read the markdown). It explains the concepts deeper than the docs and maps them to things
+  you already know.
 - Workshop / tutorial: https://strudel.cc/workshop/getting-started/
 - Function reference: https://strudel.cc/learn/
 - Sound/sample list: https://strudel.cc/learn/sounds/

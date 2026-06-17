@@ -99,10 +99,21 @@
       }
       .frame::before { top: 6px; left: 6px; border-right: 0; border-bottom: 0; }
       .frame::after  { bottom: 6px; right: 6px; border-left: 0; border-top: 0; }
-      strudel-editor {
-        display: block;
-        opacity: var(--editor-opacity, 1);
-        transition: opacity 0.12s linear;
+      strudel-editor { display: block; }
+      /* The component mounts CodeMirror into a sibling <div> (inserted right after
+         <strudel-editor>), not inside the element itself. Make only the editor's
+         BACKGROUND translucent (slider-controlled) while the code text stays fully
+         opaque — so clear out the opaque background layers and put a single
+         alpha-controlled tint on .cm-editor. */
+      .frame strudel-editor + *,
+      .frame strudel-editor + * .cm-scroller,
+      .frame strudel-editor + * .cm-content,
+      .frame strudel-editor + * .cm-gutters {
+        background-color: transparent !important;
+      }
+      .frame strudel-editor + * .cm-editor {
+        background-color: rgba(5, 6, 10, var(--editor-bg-alpha, 1)) !important;
+        transition: background-color 0.12s linear;
       }
       .hint {
         font-size: 12px;
@@ -200,6 +211,236 @@
         word-break: break-word;
       }
       .syntax-bar[hidden] { display: none; }
+
+      /* blocks rail */
+      .blocks-rail {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 12px;
+      }
+      .blocks-rail .rail-label {
+        font-size: 11px;
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+        color: var(--dim);
+      }
+      .block-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 7px;
+        border: 1px solid var(--line);
+        border-left: 3px solid var(--cyan);
+        border-radius: 3px;
+        background: #0a1320;
+        padding: 4px 8px;
+        font-size: 11px;
+        letter-spacing: 0.06em;
+        color: var(--text);
+        cursor: pointer;
+      }
+      .block-chip:hover { border-color: var(--cyan); box-shadow: 0 0 10px rgba(0, 240, 255, 0.2); }
+      .block-chip.collapsed { border-left-color: var(--magenta); opacity: 0.85; }
+      .block-chip.muted { border-left-color: var(--dim); opacity: 0.55; }
+      .block-chip .b-label { color: var(--cyan); }
+      .block-chip.collapsed .b-label { color: var(--magenta); }
+      .block-chip.muted .b-label { color: var(--dim); text-decoration: line-through; }
+      .block-chip .b-meta { color: var(--dim); font-size: 10px; }
+      .block-chip .b-mute {
+        font: inherit;
+        font-size: 10px;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        border: 1px solid var(--line);
+        border-radius: 3px;
+        background: transparent;
+        color: var(--dim);
+        padding: 1px 6px;
+        cursor: pointer;
+      }
+      .block-chip .b-mute:hover { color: var(--magenta); border-color: var(--magenta); }
+      .block-chip.muted .b-mute { color: var(--magenta); border-color: rgba(255, 43, 214, 0.4); }
+      .block-chip .b-toggle {
+        font: inherit;
+        font-size: 12px;
+        line-height: 1;
+        width: 18px;
+        height: 18px;
+        border: 1px solid var(--line);
+        border-radius: 3px;
+        background: transparent;
+        color: var(--dim);
+        cursor: pointer;
+      }
+      .block-chip .b-toggle:hover { color: var(--cyan); border-color: var(--cyan); }
+      .blocks-rail .add-block {
+        font: inherit;
+        font-size: 11px;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        border: 1px dashed var(--line);
+        border-radius: 3px;
+        background: transparent;
+        color: var(--dim);
+        padding: 4px 10px;
+        cursor: pointer;
+      }
+      .blocks-rail .add-block:hover { color: var(--magenta); border-color: var(--magenta); }
+
+      /* Blocks are drawn as OVERLAY "sheets" (see .sheets-overlay below), positioned from
+         CodeMirror's height map. We deliberately apply NO box model (margin/padding/border)
+         to .cm-line: vertical margins desync CM's cursor layer from the painted text, which
+         is what made selections drift once blocks/the prelude were added. The marker lines
+         stay in the document (so geometry/cursor are exact) but are dimmed - the sheet
+         header/footer chrome is painted on top of them. */
+      .cm-line.cm-sec-start, .cm-line.cm-sec-end { color: var(--dim); }
+      .cm-line.cm-collapsed-line { color: var(--magenta); font-style: italic; }
+      .cm-line.cm-muted-line { color: var(--dim); font-style: italic; }
+
+      /* overlay sheets: one discrete card per //#region..//#endregion block, drawn on top of
+         the editor. pointer-events:none => clicks/selection pass straight through to the code. */
+      .sheets-overlay { position: absolute; inset: 0; overflow: hidden; pointer-events: none; z-index: 4; }
+      .sheet {
+        position: absolute;
+        border: 1px solid rgba(0, 240, 255, 0.35);
+        border-radius: 7px;
+        background: rgba(0, 240, 255, 0.04);
+        box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35), 0 0 0 1px rgba(0, 0, 0, 0.25);
+      }
+      .sheet.muted { border-color: rgba(90, 107, 130, 0.5); background: rgba(90, 107, 130, 0.06); }
+      .sheet.collapsed { border-color: rgba(255, 43, 214, 0.35); background: rgba(255, 43, 214, 0.05); }
+      .sheet-head {
+        position: absolute; top: 0; left: 0; right: 0;
+        display: flex; align-items: center; gap: 7px;
+        padding: 0 7px;
+        /* solid base hides the raw //#region text underneath; gradient = neon accent */
+        background: linear-gradient(90deg, rgba(0, 240, 255, 0.20), rgba(0, 240, 255, 0.05)), #0a1320;
+        border-top-left-radius: 6px; border-top-right-radius: 6px;
+        border-bottom: 1px solid rgba(0, 240, 255, 0.30);
+        color: var(--cyan); font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase;
+        white-space: nowrap;
+        /* the strip itself passes clicks through to the code; only its buttons/label catch them */
+        pointer-events: none;
+      }
+      .sheet.muted .sheet-head { background: linear-gradient(90deg, rgba(90, 107, 130, 0.25), transparent), #0a1320; color: var(--dim); }
+      .sheet.collapsed .sheet-head { background: linear-gradient(90deg, rgba(255, 43, 214, 0.20), transparent), #0a1320; color: var(--magenta); }
+      .sheet.muted .sheet-head .sh-label { text-decoration: line-through; }
+      .sheet-head .sh-label { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; pointer-events: auto; cursor: text; }
+      .sheet-head .sh-meta { color: var(--dim); font-size: 10px; letter-spacing: 0.06em; }
+      .sheet-head button {
+        pointer-events: auto;
+        font: inherit; font-size: 10px; letter-spacing: 0.06em; text-transform: uppercase;
+        border: 1px solid var(--line); border-radius: 3px;
+        background: rgba(5, 8, 14, 0.6); color: var(--dim);
+        padding: 0 6px; line-height: 1.4; cursor: pointer;
+      }
+      .sheet-head button:hover { color: var(--cyan); border-color: var(--cyan); }
+      .sheet-head .sh-toggle { font-size: 12px; }
+      .sheet-head .sh-mute:hover { color: var(--magenta); border-color: var(--magenta); }
+      .sheet.muted .sheet-head .sh-mute { color: var(--magenta); border-color: rgba(255, 43, 214, 0.4); }
+      .sheet-foot {
+        position: absolute; left: 0; right: 0; bottom: 0;
+        background: #0a1320;
+        border-top: 1px solid rgba(255, 43, 214, 0.40);
+        border-bottom-left-radius: 6px; border-bottom-right-radius: 6px;
+      }
+
+      /* function browser palette (categorized, two-step autocomplete) */
+      .fnpal {
+        position: fixed;
+        z-index: 10000;
+        width: 540px;
+        max-width: calc(100vw - 24px);
+        background: rgba(7, 11, 18, 0.97);
+        border: 1px solid var(--cyan);
+        border-radius: 6px;
+        box-shadow: 0 0 24px rgba(0, 240, 255, 0.25), 0 12px 40px rgba(0, 0, 0, 0.6);
+        font-size: 12px;
+        color: var(--text);
+        overflow: hidden;
+      }
+      .fnpal[hidden] { display: none; }
+      .fnpal-head {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 7px 9px;
+        border-bottom: 1px solid var(--line);
+        background: linear-gradient(90deg, rgba(0, 240, 255, 0.10), transparent);
+      }
+      .fnpal-crumb {
+        font-size: 10px;
+        letter-spacing: 0.18em;
+        text-transform: uppercase;
+        color: var(--magenta);
+        white-space: nowrap;
+      }
+      .fnpal-search {
+        flex: 1;
+        font: inherit;
+        font-size: 12px;
+        color: var(--text);
+        background: #0a1320;
+        border: 1px solid var(--line);
+        border-radius: 3px;
+        padding: 5px 8px;
+        outline: none;
+      }
+      .fnpal-search:focus { border-color: var(--cyan); }
+      .fnpal-body { display: flex; max-height: 320px; }
+      .fnpal-list {
+        list-style: none;
+        margin: 0;
+        padding: 4px;
+        width: 46%;
+        overflow-y: auto;
+        border-right: 1px solid var(--line);
+      }
+      .fnpal-list li {
+        padding: 5px 8px;
+        border-radius: 3px;
+        cursor: pointer;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .fnpal-list li .tag {
+        margin-left: auto;
+        color: var(--dim);
+        font-size: 10px;
+        text-transform: lowercase;
+      }
+      .fnpal-list li.sel, .fnpal-list li:hover {
+        background: rgba(0, 240, 255, 0.12);
+        color: var(--cyan);
+      }
+      .fnpal-list li.cat { color: var(--cyan); }
+      .fnpal-list li.cat::before { content: "> "; color: var(--magenta); }
+      .fnpal-preview { flex: 1; padding: 10px 12px; overflow-y: auto; }
+      .fnpal-preview .pv-name { color: var(--cyan); font-weight: 700; font-size: 13px; }
+      .fnpal-preview .pv-desc { margin: 6px 0 8px; line-height: 1.45; }
+      .fnpal-preview .pv-ex {
+        display: block;
+        white-space: pre-wrap;
+        word-break: break-word;
+        background: #0a1320;
+        border: 1px solid var(--line);
+        border-left: 2px solid var(--magenta);
+        border-radius: 3px;
+        padding: 7px 9px;
+        color: var(--dim);
+      }
+      .fnpal-hint {
+        padding: 5px 9px;
+        border-top: 1px solid var(--line);
+        color: var(--dim);
+        font-size: 10px;
+        letter-spacing: 0.08em;
+      }
     </style>
   </head>
   <body>
@@ -219,6 +460,9 @@
         <button id="btn-open" type="button" title="Open a file (Ctrl+O)">Open</button>
         <button id="btn-save" type="button" title="Save (Ctrl+S)">Save</button>
         <button id="btn-saveas" type="button" title="Save As (Ctrl+Shift+S)">Save As</button>
+        <button id="btn-sa" type="button" title="Load switch-angel prelude (custom words) on demand — keeps playback running">+ switch-angel</button>
+        <button id="btn-fns" type="button" title="Browse functions by category (Ctrl+Space)">Functions</button>
+        <button id="btn-add-block" type="button" title="Wrap the current selection in a new block">+ Block</button>
         <label class="slider-ctl" title="Editor transparency — see the background through the editor">
           <span>Opacity</span>
           <input id="opacity-slider" type="range" min="0.3" max="1" step="0.05" value="1" />
@@ -264,8 +508,9 @@ stack(
 
       <p class="hint">
         <span class="prompt">&gt;</span> click once to arm audio, then run with Ctrl+Enter.
-        autocomplete is live: start typing a function and pick from the menu, or hit
-        <kbd>Ctrl</kbd>+<kbd>Space</kbd> to summon it. each entry shows the doc + examples.
+        press <kbd>Ctrl</kbd>+<kbd>Space</kbd> (or the <code>Functions</code> button) to open
+        the function browser - search, or pick a category then a function. each shows a
+        description and example, and inserts at the cursor.
         <br />
         <span class="prompt">&gt;</span> files: <kbd>Ctrl</kbd>+<kbd>O</kbd> open ·
         <kbd>Ctrl</kbd>+<kbd>S</kbd> save (writes back to the same file) ·
@@ -307,8 +552,11 @@ stack(
           open: document.getElementById("btn-open"),
           save: document.getElementById("btn-save"),
           saveAs: document.getElementById("btn-saveas"),
+          sa: document.getElementById("btn-sa"),
+          addBlk: document.getElementById("btn-add-block"),
           syntax: document.getElementById("syntax-bar"),
           opacity: document.getElementById("opacity-slider"),
+          fns: document.getElementById("btn-fns"),
         };
 
         // Minimal scaffold for a fresh pattern (audible, not blank).
@@ -336,6 +584,391 @@ stack(
           host.editor.setCode(text);
         }
 
+        // --- Blocks: //#region <label> ... //#endregion -----------------------------
+        // A lightweight "blocks" layer over the single buffer. Each region is a labeled
+        // block you can collapse in the editor view. Collapsing stashes the block body
+        // out of the visible buffer (replaced by a //#collapsed marker) but it is
+        // transparently re-expanded for EVALUATING and SAVING — so folded blocks keep
+        // playing and the on-disk file always keeps full content.
+        var REGION_RE = /^\s*\/\/#region\s*(.*)$/;
+        var ENDREGION = "//#endregion";
+        var COLLAPSED = "//#collapsed";
+        var MUTED = "//#muted"; // marker line: block body below is commented out (muted)
+        var collapsedBodies = {}; // label -> stashed body text
+        var lastRailSig = null;
+
+        function blockLabel(line) {
+          var m = line.match(REGION_RE);
+          return m ? (m[1] || "block").trim() || "block" : null;
+        }
+
+        function parseBlocks(code) {
+          var lines = code.split("\n");
+          var blocks = [];
+          for (var i = 0; i < lines.length; i++) {
+            var label = blockLabel(lines[i]);
+            if (label === null) continue;
+            var j = i + 1;
+            while (j < lines.length && lines[j].trim() !== ENDREGION) j++;
+            var collapsed = lines[i + 1] !== undefined && lines[i + 1].trim() === COLLAPSED;
+            var muted;
+            if (collapsed) {
+              var s = collapsedBodies[label];
+              muted = !!s && s.split("\n")[0].trim() === MUTED;
+            } else {
+              muted = lines[i + 1] !== undefined && lines[i + 1].trim() === MUTED;
+            }
+            blocks.push({ label: label, start: i, bodyStart: i + 1, end: j, collapsed: collapsed, muted: muted });
+            i = j; // flat blocks (no nesting): continue past the endregion
+          }
+          return blocks;
+        }
+
+        // The visible buffer with every collapsed block expanded back to full source.
+        // Used for evaluating, saving, syntax-checking and dirty tracking, so collapse
+        // is purely a view concern.
+        function reconstructFullCode() {
+          if (!Object.keys(collapsedBodies).length) return getCode();
+          var lines = getCode().split("\n");
+          var out = [];
+          for (var i = 0; i < lines.length; i++) {
+            out.push(lines[i]);
+            var label = blockLabel(lines[i]);
+            if (
+              label !== null &&
+              lines[i + 1] !== undefined &&
+              lines[i + 1].trim() === COLLAPSED &&
+              collapsedBodies[label] !== undefined
+            ) {
+              if (collapsedBodies[label] !== "") out.push(collapsedBodies[label]);
+              i++; // skip the //#collapsed marker line
+            }
+          }
+          return out.join("\n");
+        }
+
+        function lineToPos(code, lineIdx) {
+          var lines = code.split("\n");
+          var pos = 0;
+          for (var i = 0; i < lineIdx && i < lines.length; i++) pos += lines[i].length + 1;
+          return pos;
+        }
+
+        function toggleCollapse(label) {
+          var lines = getCode().split("\n");
+          for (var i = 0; i < lines.length; i++) {
+            if (blockLabel(lines[i]) !== label) continue;
+            var j = i + 1;
+            while (j < lines.length && lines[j].trim() !== ENDREGION) j++;
+            if (j >= lines.length) return; // no matching endregion
+            var collapsed = lines[i + 1] !== undefined && lines[i + 1].trim() === COLLAPSED;
+            var next;
+            if (collapsed) {
+              var body = collapsedBodies[label] !== undefined ? collapsedBodies[label] : "";
+              next = lines.slice(0, i + 1).concat(body === "" ? [] : body.split("\n"), lines.slice(j));
+              delete collapsedBodies[label];
+            } else {
+              collapsedBodies[label] = lines.slice(i + 1, j).join("\n");
+              next = lines.slice(0, i + 1).concat([COLLAPSED], lines.slice(j));
+            }
+            setCode(next.join("\n"));
+            renderRail(true);
+            return;
+          }
+        }
+
+        function commentLines(arr) {
+          return arr.map(function (l) { return l.trim() === "" ? l : "// " + l; });
+        }
+        function uncommentLines(arr) {
+          return arr.map(function (l) {
+            if (l.indexOf("// ") === 0) return l.slice(3);
+            if (l.indexOf("//") === 0) return l.slice(2);
+            return l;
+          });
+        }
+
+        // Mute = comment out the block body (prefixed with a //#muted marker line so we
+        // can detect/undo it). Works whether the block is expanded (edit the buffer) or
+        // collapsed (edit the stashed body). Muted code is plain comments, so it's skipped
+        // on evaluate, stays greyed in the editor, and persists in the saved file.
+        function toggleMute(label) {
+          var lines = getCode().split("\n");
+          var bi = -1, bj = -1;
+          for (var i = 0; i < lines.length; i++) {
+            if (blockLabel(lines[i]) !== label) continue;
+            var j = i + 1;
+            while (j < lines.length && lines[j].trim() !== ENDREGION) j++;
+            if (j >= lines.length) return;
+            bi = i; bj = j; break;
+          }
+          if (bi < 0) return;
+          var collapsed = lines[bi + 1] !== undefined && lines[bi + 1].trim() === COLLAPSED;
+          if (collapsed) {
+            var sl = (collapsedBodies[label] || "").split("\n");
+            if (sl[0] !== undefined && sl[0].trim() === MUTED) {
+              collapsedBodies[label] = uncommentLines(sl.slice(1)).join("\n");
+            } else {
+              collapsedBodies[label] = [MUTED].concat(commentLines(sl)).join("\n");
+            }
+          } else {
+            var body = lines.slice(bi + 1, bj);
+            var next;
+            if (body[0] !== undefined && body[0].trim() === MUTED) {
+              next = lines.slice(0, bi + 1).concat(uncommentLines(body.slice(1)), lines.slice(bj));
+            } else {
+              next = lines.slice(0, bi + 1).concat([MUTED], commentLines(body), lines.slice(bj));
+            }
+            setCode(next.join("\n"));
+          }
+          renderRail(true);
+          reevaluateIfPlaying(); // apply the mute/unmute live if something is playing
+        }
+
+        function relabelBlock(oldLabel) {
+          var nl = window.prompt("Block label:", oldLabel);
+          if (nl == null) return;
+          nl = nl.trim() || oldLabel;
+          if (nl === oldLabel) return;
+          var lines = getCode().split("\n");
+          for (var i = 0; i < lines.length; i++) {
+            if (blockLabel(lines[i]) === oldLabel) {
+              lines[i] = "//#region " + nl;
+              break;
+            }
+          }
+          if (collapsedBodies[oldLabel] !== undefined) {
+            collapsedBodies[nl] = collapsedBodies[oldLabel];
+            delete collapsedBodies[oldLabel];
+          }
+          setCode(lines.join("\n"));
+          renderRail(true);
+        }
+
+        function scrollToBlock(label) {
+          var view = host.editor && host.editor.editor;
+          if (!view) return;
+          var blocks = parseBlocks(getCode());
+          for (var i = 0; i < blocks.length; i++) {
+            if (blocks[i].label === label) {
+              var pos = lineToPos(getCode(), blocks[i].start);
+              view.dispatch({ selection: { anchor: pos, head: pos }, scrollIntoView: true });
+              view.focus();
+              return;
+            }
+          }
+        }
+
+        function addBlockFromSelection() {
+          var view = host.editor && host.editor.editor;
+          if (!view) return;
+          var sel = view.state.selection.main;
+          var code = getCode();
+          var before = code.slice(0, sel.from);
+          var mid = code.slice(sel.from, sel.to);
+          var after = code.slice(sel.to);
+          var open = (before === "" || before.endsWith("\n") ? "" : "\n") + "//#region new block\n";
+          var midOut = mid === "" || mid.endsWith("\n") ? mid : mid + "\n";
+          var tail = after === "" || after.startsWith("\n") ? after : "\n" + after;
+          setCode(before + open + midOut + ENDREGION + tail);
+          renderRail(true);
+        }
+
+        // Legacy top "blocks rail". The per-block controls now live in each sheet's header
+        // (see layoutSheets), so there's no rail element and this is inert — kept guarded so
+        // the existing renderRail() calls stay harmless.
+        function renderRail(force) {
+          if (!els.rail) return;
+          var blocks = parseBlocks(getCode());
+          var sig = JSON.stringify(blocks.map(function (b) { return b.label + ":" + b.collapsed + ":" + b.muted; }));
+          if (!force && sig === lastRailSig) return;
+          lastRailSig = sig;
+          els.rail.textContent = "";
+          var tag = document.createElement("span");
+          tag.className = "rail-label";
+          tag.textContent = "blocks";
+          els.rail.appendChild(tag);
+          blocks.forEach(function (b) {
+            var chip = document.createElement("span");
+            chip.className = "block-chip" + (b.collapsed ? " collapsed" : "") + (b.muted ? " muted" : "");
+            var toggle = document.createElement("button");
+            toggle.className = "b-toggle";
+            toggle.textContent = b.collapsed ? "+" : "-";
+            toggle.title = b.collapsed ? "expand" : "collapse";
+            toggle.addEventListener("click", function (e) { e.stopPropagation(); toggleCollapse(b.label); });
+            var mute = document.createElement("button");
+            mute.className = "b-mute";
+            mute.textContent = b.muted ? "unmute" : "mute";
+            mute.title = b.muted ? "unmute (uncomment) this block" : "mute (comment out) this block";
+            mute.addEventListener("click", function (e) { e.stopPropagation(); toggleMute(b.label); });
+            var name = document.createElement("span");
+            name.className = "b-label";
+            name.textContent = b.label;
+            name.title = "click to jump, double-click to rename";
+            name.addEventListener("dblclick", function (e) { e.stopPropagation(); relabelBlock(b.label); });
+            var meta = document.createElement("span");
+            meta.className = "b-meta";
+            meta.textContent = b.collapsed ? "hidden" : Math.max(0, b.end - b.bodyStart) + "L";
+            chip.appendChild(toggle);
+            chip.appendChild(name);
+            chip.appendChild(meta);
+            chip.appendChild(mute);
+            chip.addEventListener("click", function () { scrollToBlock(b.label); });
+            els.rail.appendChild(chip);
+          });
+          var add = document.createElement("button");
+          add.className = "add-block";
+          add.textContent = "+ block";
+          add.title = "wrap the current selection in a new block";
+          add.addEventListener("click", addBlockFromSelection);
+          els.rail.appendChild(add);
+        }
+
+        // Visually divide the editor itself: tag the .cm-line DOM nodes that make up each
+        // section so the CSS above can draw a card. CodeMirror re-creates line nodes on
+        // edit/scroll/playback-highlight, so a MutationObserver re-applies the tags.
+        function decorateRegions() {
+          var view = host.editor && host.editor.editor;
+          if (!view || !view.contentDOM) return;
+          var lines = view.contentDOM.querySelectorAll(".cm-line");
+          var inSection = false;
+          for (var i = 0; i < lines.length; i++) {
+            var ln = lines[i];
+            var tr = (ln.textContent || "").trim();
+            ln.classList.remove("cm-sec", "cm-sec-start", "cm-sec-end", "cm-collapsed-line", "cm-muted-line");
+            if (/^\/\/#region\b/.test(tr)) {
+              inSection = true;
+              ln.classList.add("cm-sec", "cm-sec-start");
+            } else if (tr === ENDREGION) {
+              ln.classList.add("cm-sec", "cm-sec-end");
+              inSection = false;
+            } else if (inSection) {
+              ln.classList.add("cm-sec");
+              if (tr === COLLAPSED) ln.classList.add("cm-collapsed-line");
+              else if (tr === MUTED) ln.classList.add("cm-muted-line");
+            }
+          }
+        }
+        function startRegionDecoration() {
+          var view = host.editor && host.editor.editor;
+          if (!view || !view.contentDOM || view.__regionObserved) return;
+          view.__regionObserved = true;
+          decorateRegions();
+          // Reapply SYNCHRONOUSLY inside the observer callback. MutationObserver callbacks
+          // run as microtasks, before the browser paints — so when CodeMirror re-creates
+          // line nodes (e.g. every frame while a pattern is playing and highlighting), the
+          // section styling is restored in the same tick and never drops for a frame. The
+          // earlier requestAnimationFrame version reapplied one frame late => the flicker.
+          var obs = new MutationObserver(function () { decorateRegions(); scheduleLayout(); });
+          obs.observe(view.contentDOM, { childList: true, subtree: true, characterData: true });
+        }
+
+        // --- Overlay "sheets": draw each block as a discrete visual card ------------
+        // Each //#region..//#endregion is rendered as a floating card ON TOP of the editor,
+        // positioned from CodeMirror's height map (lineBlockAt) so it tracks scrolling and
+        // edits. The card's header strip covers the //#region line and shows the block name;
+        // a footer strip covers the //#endregion line. Because we never touch .cm-line
+        // geometry, the text cursor stays exactly aligned. Cards are pointer-events:none, so
+        // editing/selection happen on the code underneath as normal.
+        var sheetsOverlay = null, sheetNodes = [], sheetsSig = null, layoutQueued = false;
+
+        function scheduleLayout() {
+          if (layoutQueued) return;
+          layoutQueued = true;
+          requestAnimationFrame(function () { layoutQueued = false; layoutSheets(); });
+        }
+
+        function ensureOverlay(view) {
+          if (sheetsOverlay) return;
+          var scroller = view.scrollDOM;
+          if (getComputedStyle(scroller).position === "static") scroller.style.position = "relative";
+          sheetsOverlay = document.createElement("div");
+          sheetsOverlay.className = "sheets-overlay";
+          scroller.appendChild(sheetsOverlay);
+          scroller.addEventListener("scroll", scheduleLayout, { passive: true });
+        }
+
+        function layoutSheets() {
+          var view = host.editor && host.editor.editor;
+          if (!view || !view.scrollDOM || !view.contentDOM) return;
+          try {
+            ensureOverlay(view);
+            var code = getCode();
+            var blocks = parseBlocks(code);
+            var lineCount = code.split("\n").length;
+            var sig = blocks.map(function (b) { return b.label + ":" + b.collapsed + ":" + b.muted; }).join("|") + "#" + blocks.length;
+            if (sig !== sheetsSig) {
+              sheetsOverlay.textContent = "";
+              sheetNodes = blocks.map(function (b) {
+                var sheet = document.createElement("div");
+                sheet.className = "sheet" + (b.collapsed ? " collapsed" : "") + (b.muted ? " muted" : "");
+                var head = document.createElement("div");
+                head.className = "sheet-head";
+                // collapse / expand
+                var toggle = document.createElement("button");
+                toggle.className = "sh-toggle";
+                toggle.textContent = b.collapsed ? "+" : "-";
+                toggle.title = b.collapsed ? "expand block" : "collapse block";
+                toggle.addEventListener("click", function (e) { e.stopPropagation(); toggleCollapse(b.label); });
+                // name (double-click to rename)
+                var label = document.createElement("span");
+                label.className = "sh-label";
+                label.textContent = b.label;
+                label.title = "double-click to rename";
+                label.addEventListener("dblclick", function (e) { e.stopPropagation(); relabelBlock(b.label); });
+                // line count / state
+                var meta = document.createElement("span");
+                meta.className = "sh-meta";
+                meta.textContent = b.muted ? "muted" : b.collapsed ? "hidden" : Math.max(0, b.end - b.bodyStart) + "L";
+                // mute / unmute (comments out the block body)
+                var mute = document.createElement("button");
+                mute.className = "sh-mute";
+                mute.textContent = b.muted ? "unmute" : "mute";
+                mute.title = b.muted ? "unmute (uncomment) this block" : "mute (comment out) this block";
+                mute.addEventListener("click", function (e) { e.stopPropagation(); toggleMute(b.label); });
+                head.appendChild(toggle);
+                head.appendChild(label);
+                head.appendChild(meta);
+                head.appendChild(mute);
+                var foot = document.createElement("div");
+                foot.className = "sheet-foot";
+                sheet.appendChild(head);
+                sheet.appendChild(foot);
+                sheetsOverlay.appendChild(sheet);
+                return { el: sheet, head: head, foot: foot, b: b };
+              });
+              sheetsSig = sig;
+            } else {
+              for (var k = 0; k < sheetNodes.length; k++) sheetNodes[k].b = blocks[k];
+            }
+            var contentRect = view.contentDOM.getBoundingClientRect();
+            var scrollRect = view.scrollDOM.getBoundingClientRect();
+            var leftInset = contentRect.left - scrollRect.left;
+            var width = contentRect.width;
+            // documentTop = screen Y of content coordinate 0 (the origin lineBlockAt uses),
+            // so it already folds in scroll position and content padding.
+            var docTop = view.documentTop;
+            for (var i = 0; i < sheetNodes.length; i++) {
+              var b = sheetNodes[i].b;
+              var topB = view.lineBlockAt(lineToPos(code, b.start));
+              var botB = view.lineBlockAt(lineToPos(code, Math.min(b.end, lineCount - 1)));
+              var screenTop = docTop + topB.top - scrollRect.top;
+              var screenBot = docTop + botB.bottom - scrollRect.top;
+              var el = sheetNodes[i].el;
+              el.style.left = leftInset + "px";
+              el.style.width = width + "px";
+              el.style.top = screenTop + "px";
+              el.style.height = screenBot - screenTop + "px";
+              // header covers the region line (and, when collapsed, the collapsed marker too)
+              var headH = b.collapsed ? Math.max(topB.height, botB.top - topB.top) : topB.height;
+              sheetNodes[i].head.style.height = headH + "px";
+              sheetNodes[i].foot.style.height = botB.height + "px";
+            }
+          } catch (e) {
+            // non-fatal: if geometry isn't available the cards just don't draw this tick.
+          }
+        }
+
         // If a pattern is currently playing, re-evaluate so a save hot-reloads the
         // running sound immediately (no manual stop/run). Strudel updates a running
         // pattern in place. No-op when nothing is playing.
@@ -350,7 +983,7 @@ stack(
           }
         }
 
-        function isDirty() { return lastSaved !== null && getCode() !== lastSaved; }
+        function isDirty() { return lastSaved !== null && reconstructFullCode() !== lastSaved; }
 
         // Lightweight live syntax check. Strudel patterns are valid JavaScript
         // (mini-notation lives inside strings), so parsing with `new Function`
@@ -360,7 +993,7 @@ stack(
         function checkSyntax() {
           if (!els.syntax) return;
           try {
-            new Function(getCode());
+            new Function(reconstructFullCode());
             els.syntax.hidden = true;
             els.syntax.textContent = "";
           } catch (e) {
@@ -385,11 +1018,74 @@ stack(
           document.title = (dirty ? "* " : "") + fileName + " — STRUDEL // NEON GRID";
         }
 
+        // --- On-demand "prelude" loading ------------------------------------------
+        // A prelude is a library of custom Strudel words (register(), Pattern.prototype
+        // extensions). We evaluate it in GLOBAL scope for its side effects only, so the
+        // words become available without going through the scheduler — anything playing
+        // keeps playing. Rather than dumping the (huge) source into the editor, we drop a
+        // collapsed "block marker" so you can see it's loaded without showing all of it.
+        // This marker is the seed for the future multi-block / orchestration view.
+        var PRELUDES = {
+          "switch-angel": "/patterns/switch-angel/switch-angel-scripts.js",
+        };
+
+        async function loadPrelude(name) {
+          if (window._preludeLoading && window._preludeLoading[name]) return; // already in flight
+          if (!window._preludeLoading) window._preludeLoading = {};
+          window._preludeLoading[name] = true;
+          var url = PRELUDES[name];
+          if (!url) return;
+          try {
+            setStatus("loading " + name + " prelude...");
+            var res = await fetch(url);
+            if (!res.ok) throw new Error("HTTP " + res.status + " for " + url);
+            var src = await res.text();
+            if (!host.editor || !host.editor.repl || typeof host.editor.repl.evaluate !== "function") {
+              throw new Error("editor not ready yet — wait a moment and retry");
+            }
+            // Run the prelude through Strudel's OWN evaluator (its transpiler + scope) —
+            // the same path strudel.cc uses. register()/Pattern/etc. live in that scope,
+            // NOT on window, so a plain global eval throws "register is not defined".
+            // Some preludes use a custom registerFunc that writes to `strudelScope`; keep a
+            // global fallback so it can't abort partway. Trailing `silence` makes the result
+            // a valid pattern; autostart=false + shouldHush=false => register the words
+            // without starting or stopping the transport (anything playing keeps playing).
+            if (typeof window.strudelScope === "undefined") window.strudelScope = globalThis;
+            await host.editor.repl.evaluate(src + "\n\nsilence", false, false);
+            if (els.sa) { els.sa.textContent = "switch-angel [on]"; els.sa.disabled = true; }
+            setStatus(name + " loaded - press Ctrl+Enter to run");
+          } catch (err) {
+            console.error(err);
+            setStatus(name + " load failed: " + (err && err.message ? err.message : err), true);
+          } finally {
+            if (window._preludeLoading) window._preludeLoading[name] = false;
+          }
+        }
+        window.loadPrelude = loadPrelude;
+
+        // Drop a folded-region marker at the top of the buffer so the loaded prelude is
+        // visible-as-a-block but its source stays hidden. (//#region is a standard fold
+        // hint; Strudel ignores it as a comment.)
+        function insertPreludeMarker(name) {
+          if (!host.editor) return;
+          var tag = "//#region prelude:" + name;
+          var code = host.editor.code || "";
+          if (code.indexOf(tag) !== -1) return; // already marked
+          var marker =
+            tag + "\n" +
+            "// loaded & hidden - custom words ready; write patterns below\n" +
+            "//#endregion\n\n";
+          host.editor.setCode(marker + code);
+          renderRail(true);
+        }
+
         function newFile() {
           if (isDirty() && !window.confirm("Discard unsaved changes and start a new pattern?")) {
             return;
           }
           setCode(NEW_TEMPLATE);
+          collapsedBodies = {};
+          lastRailSig = null;
           fileHandle = null;
           lastSaved = NEW_TEMPLATE;
           setFileName("untitled");
@@ -402,6 +1098,8 @@ stack(
               fileHandle = picked[0];
               var text = await (await fileHandle.getFile()).text();
               setCode(text);
+              collapsedBodies = {};
+              lastRailSig = null;
               lastSaved = text;
               setFileName(fileHandle.name);
               setStatus("opened " + fileHandle.name);
@@ -420,7 +1118,7 @@ stack(
           try {
             if (!supportsFS) return saveFallback();
             if (!fileHandle) return saveAsFile();
-            var code = getCode();
+            var code = reconstructFullCode();
             var w = await fileHandle.createWritable();
             await w.write(code);
             await w.close();
@@ -443,7 +1141,7 @@ stack(
               suggestedName: fileName === "untitled" ? "my-pattern.js" : fileName,
               types: fileTypes,
             });
-            var code = getCode();
+            var code = reconstructFullCode();
             var w = await fileHandle.createWritable();
             await w.write(code);
             await w.close();
@@ -471,6 +1169,8 @@ stack(
             reader.onload = function () {
               var text = String(reader.result);
               setCode(text);
+              collapsedBodies = {};
+              lastRailSig = null;
               lastSaved = text;
               setFileName(f.name);
             };
@@ -479,7 +1179,7 @@ stack(
           input.click();
         }
         function saveFallback() {
-          var code = getCode();
+          var code = reconstructFullCode();
           var blob = new Blob([code], { type: "text/javascript" });
           var a = document.createElement("a");
           a.href = URL.createObjectURL(blob);
@@ -495,12 +1195,14 @@ stack(
         els.open.addEventListener("click", openFile);
         els.save.addEventListener("click", saveFile);
         els.saveAs.addEventListener("click", saveAsFile);
+        if (els.sa) els.sa.addEventListener("click", function () { loadPrelude("switch-angel"); });
+        if (els.addBlk) els.addBlk.addEventListener("click", addBlockFromSelection);
 
-        // Transparency slider: dial the editor's opacity so the animated
-        // background shows through.
+        // Transparency slider: dial the alpha of the editor's background tint so the
+        // page background shows through — the code text stays fully opaque.
         if (els.opacity) {
           els.opacity.addEventListener("input", function () {
-            document.documentElement.style.setProperty("--editor-opacity", els.opacity.value);
+            document.documentElement.style.setProperty("--editor-bg-alpha", els.opacity.value);
           });
         }
 
@@ -530,24 +1232,568 @@ stack(
           }
         });
 
+        // --- Categorized function browser (two-step autocomplete) ------------------
+        // Strudel's native autocomplete stays on (inline, as-you-type, context-aware,
+        // and the full source of truth). This adds a curated, category-first palette on
+        // Ctrl+Space / the Functions button: pick a category, then a function. Typing in
+        // its search box flattens to a cross-category search. Selecting inserts the call
+        // at the cursor. The list is curated + grounded in the Strudel docs because the
+        // live function list isn't reachable at runtime from the embed.
+        //
+        // item tuple: [name, isMethod(leads with "."), hasParens, takesArgs(caret inside), desc, example]
+        var FN_CATS = [
+          { id: "sound", label: "Sound sources", blurb: "Where sound comes from - samples and synths.", items: [
+            ["s", 0, 1, 1, "play a sample or synth by name", "s('bd sd hh')"],
+            ["sound", 0, 1, 1, "sample or synth source (sine, sawtooth, square, supersaw, white...)", "sound('sawtooth')"],
+            ["note", 0, 1, 1, "pitches by name or MIDI number", "note('c e g')"],
+            ["n", 0, 1, 1, "index: sample number, or scale degree with .scale()", "n('0 2 4').scale('C:major')"],
+            ["bank", 1, 1, 1, "pick a drum-machine bank for sample names", "s('bd sd').bank('RolandTR808')"],
+            ["stack", 0, 1, 1, "layer several patterns to play at once", "stack(s('bd*4'), s('hh*8'))"],
+            ["silence", 0, 0, 0, "no sound - useful in masks and builds", "silence"],
+            ["samples", 0, 1, 1, "load a sample pack from GitHub (run twice)", "samples('github:tidalcycles/dirt-samples')"],
+          ] },
+          { id: "sampling", label: "Sampling", blurb: "Slice, stretch and warp loaded samples.", items: [
+            ["begin", 1, 1, 1, "start playback partway into the sample (0..1)", "s('bd').begin(0.1)"],
+            ["end", 1, 1, 1, "cut sample playback off early (0..1)", "s('bd').end(0.5)"],
+            ["speed", 1, 1, 1, "playback speed; negative plays backwards", "s('bd*4').speed('1 2 -1 0.5')"],
+            ["chop", 1, 1, 1, "cut each sample into n pieces (granular)", "s('rhodes').chop(4)"],
+            ["slice", 1, 1, 1, "play numbered slices of a sample", "s('breaks165').slice(8, '0 1 2 3')"],
+            ["splice", 1, 1, 1, "like slice, but warps speed to fit", "s('breaks165').splice(8, '0 1 2 3')"],
+            ["striate", 1, 1, 1, "interleave n slices across the cycle", "s('numbers').striate(6)"],
+            ["loopAt", 1, 1, 1, "stretch a sample to fit n cycles", "s('rhodes').loopAt(2)"],
+            ["fit", 1, 1, 0, "fit the sample to its event length", "s('rhodes').fit()"],
+            ["loop", 1, 1, 1, "loop the sample (1 = on)", "s('casio').loop(1)"],
+            ["loopBegin", 1, 1, 1, "where the loop section starts", "s('space').loop(1).loopBegin(0.25)"],
+            ["loopEnd", 1, 1, 1, "where the loop section ends", "s('space').loop(1).loopEnd(0.75)"],
+            ["cut", 1, 1, 1, "cut group: a new hit stops others in the group", "s('oh hh').cut(1)"],
+            ["clip", 1, 1, 1, "scale note length (alias: legato)", "note('c a f e').clip(0.5)"],
+            ["scrub", 1, 1, 1, "scrub through a sample like tape", "s('swpad:0').scrub('{0.1 0.25}%4')"],
+          ] },
+          { id: "notes", label: "Notes & harmony", blurb: "Pitch: naming notes and snapping to scales.", items: [
+            ["note", 0, 1, 1, "pitches by name or MIDI number", "note('c e g')"],
+            ["n", 0, 1, 1, "scale degree (with .scale) or sample index", "n('0 2 4').scale('C:minor')"],
+            ["scale", 1, 1, 1, "snap n() degrees to a musical scale", "n('0 2 4 6').scale('C:minor')"],
+            ["scaleTranspose", 1, 1, 1, "move within the scale by N steps", "n('0 1 2 3').scaleTranspose(2)"],
+            ["transpose", 1, 1, 1, "shift pitch by a number of semitones", "note('c e g').transpose(7)"],
+            ["add", 1, 1, 1, "add to numbers/notes, e.g. an octave", "note('c e g').add(note(12))"],
+          ] },
+          { id: "chords", label: "Chords & voicings", blurb: "Chord symbols, voicings and arpeggios.", items: [
+            ["chord", 0, 1, 1, "chord symbols changing over time", "chord('<C^7 A7 Dm7 G7>')"],
+            ["voicing", 1, 1, 0, "turn chord symbols into voiced notes", "chord('<C^7 A-7>').voicing()"],
+            ["rootNotes", 1, 1, 1, "chord roots at an octave - good for bass", "chord('<Cm Ab>').rootNotes(2)"],
+            ["dict", 1, 1, 1, "choose a voicing dictionary", "chord('C').dict('ireal').voicing()"],
+            ["mode", 1, 1, 1, "how voicings align to the anchor", "n('0').mode('root:g2').voicing()"],
+            ["arp", 1, 1, 1, "arpeggiate stacked notes by index", "chord('<Cm Ab>').voicing().arp('0 1 2 3')"],
+            ["arpWith", 1, 1, 1, "arpeggiate using a custom function", "chord('Cm').voicing().arpWith(h => h[0])"],
+          ] },
+          { id: "filters", label: "Filters", blurb: "Carve frequencies: low/high/band-pass + vowel.", items: [
+            ["lpf", 1, 1, 1, "low-pass cutoff in Hz (alias: cutoff)", "s('bd').lpf(800)"],
+            ["lpq", 1, 1, 1, "low-pass resonance / Q", "s('bd').lpf(800).lpq(10)"],
+            ["hpf", 1, 1, 1, "high-pass cutoff in Hz", "s('bd').hpf(200)"],
+            ["hpq", 1, 1, 1, "high-pass resonance / Q", "s('bd').hpf(200).hpq(8)"],
+            ["bpf", 1, 1, 1, "band-pass center frequency in Hz", "s('bd').bpf(1000)"],
+            ["bpq", 1, 1, 1, "band-pass resonance / Q", "s('bd').bpf(1000).bpq(4)"],
+            ["ftype", 1, 1, 1, "filter type: 12db, 24db, or ladder", "note('c').lpf(500).ftype('ladder')"],
+            ["vowel", 1, 1, 1, "formant filter - vowel sounds (a e i o u)", "note('c').s('sawtooth').vowel('a')"],
+          ] },
+          { id: "envelopes", label: "Envelopes", blurb: "Shape level + filter over each note (ADSR). hp*/bp* mirror lp*.", items: [
+            ["attack", 1, 1, 1, "amp attack time, seconds", "note('c3').attack(0.1)"],
+            ["decay", 1, 1, 1, "amp decay time, seconds", "note('c3').decay(0.2).sustain(0)"],
+            ["sustain", 1, 1, 1, "amp sustain level, 0..1", "note('c3').sustain(0.5)"],
+            ["release", 1, 1, 1, "amp release time, seconds", "note('c3').release(0.4)"],
+            ["adsr", 1, 1, 1, "whole amp envelope (a:d:s:r)", "note('c3').adsr('0.1:0.1:0.5:0.2')"],
+            ["lpenv", 1, 1, 1, "filter envelope depth - the acid move", "note('c2').lpf(300).lpenv(4).lpa(0.01).lpd(0.1)"],
+            ["lpattack", 1, 1, 1, "filter env attack (alias: lpa)", "note('c2').lpf(300).lpa(0.5).lpenv(4)"],
+            ["lpdecay", 1, 1, 1, "filter env decay (alias: lpd)", "note('c2').lpf(300).lpd(0.5).lpenv(4)"],
+            ["lpsustain", 1, 1, 1, "filter env sustain (alias: lps)", "note('c2').lpf(300).lps(0.5).lpenv(4)"],
+            ["lprelease", 1, 1, 1, "filter env release (alias: lpr)", "note('c2').lpf(300).lpenv(4).lpr(0.25)"],
+            ["hpenv", 1, 1, 1, "high-pass filter envelope depth", "note('c2').hpf(300).hpenv(4).hpa(0.01).hpd(0.1)"],
+            ["hpattack", 1, 1, 1, "hp filter env attack, seconds (alias: hpa)", "note('c2').hpf(300).hpenv(4).hpa(0.5)"],
+            ["hpdecay", 1, 1, 1, "hp filter env decay, seconds (alias: hpd)", "note('c2').hpf(300).hpenv(4).hpd(0.2)"],
+            ["hpsustain", 1, 1, 1, "hp filter env sustain level (alias: hps)", "note('c2').hpf(300).hpenv(4).hps(0.5)"],
+            ["hprelease", 1, 1, 1, "hp filter env release, seconds (alias: hpr)", "note('c2').hpf(300).hpenv(4).hpr(0.3)"],
+            ["bpenv", 1, 1, 1, "band-pass filter envelope depth", "note('c2').bpf(500).bpenv(4).bpa(0.01).bpd(0.1)"],
+            ["bpattack", 1, 1, 1, "bp filter env attack, seconds (alias: bpa)", "note('c2').bpf(500).bpenv(4).bpa(0.5)"],
+            ["bpdecay", 1, 1, 1, "bp filter env decay, seconds (alias: bpd)", "note('c2').bpf(500).bpenv(4).bpd(0.2)"],
+            ["bpsustain", 1, 1, 1, "bp filter env sustain level (alias: bps)", "note('c2').bpf(500).bpenv(4).bps(0.5)"],
+            ["bprelease", 1, 1, 1, "bp filter env release, seconds (alias: bpr)", "note('c2').bpf(500).bpenv(4).bpr(0.3)"],
+          ] },
+          { id: "synth", label: "Synthesis", blurb: "FM, noise, vibrato and pitch-envelope shaping.", items: [
+            ["fm", 1, 1, 1, "FM amount - brightness / edge", "note('c e g').fm(4)"],
+            ["fmh", 1, 1, 1, "FM harmonicity - metallic vs natural", "note('c e g').fm(4).fmh(2)"],
+            ["fmattack", 1, 1, 1, "FM envelope attack (alias: fmatt)", "note('c').fm(4).fmattack(0.1)"],
+            ["fmdecay", 1, 1, 1, "FM envelope decay (alias: fmdec)", "note('c').fm(4).fmdecay(0.1)"],
+            ["fmsustain", 1, 1, 1, "FM envelope sustain level", "note('c').fm(4).fmsustain(0.5)"],
+            ["fmenv", 1, 1, 1, "FM envelope curve: lin or exp", "note('c').fm(4).fmenv('exp')"],
+            ["noise", 1, 1, 1, "mix noise into the oscillator (0..1)", "note('c3').noise(0.3)"],
+            ["vib", 1, 1, 1, "vibrato rate (alias: vibrato, v)", "note('a e').vib(4)"],
+            ["vibmod", 1, 1, 1, "vibrato depth in semitones (alias: vmod)", "note('a e').vib(4).vibmod(0.5)"],
+            ["penv", 1, 1, 1, "pitch envelope depth in semitones", "note('c').penv(12)"],
+            ["pattack", 1, 1, 1, "pitch envelope attack, seconds", "note('c').pattack(0.1)"],
+            ["pdecay", 1, 1, 1, "pitch envelope decay, seconds", "note('c').pdecay(0.1)"],
+            ["prelease", 1, 1, 1, "pitch envelope release, seconds", "note('c').prelease(0.1).release(0.5)"],
+          ] },
+          { id: "fx", label: "Effects", blurb: "The effect rack: reverb, delay, drive, phaser.", items: [
+            ["room", 1, 1, 1, "reverb send amount, 0..1", "s('bd').room(0.5)"],
+            ["roomsize", 1, 1, 1, "reverb size / decay (alias: size)", "s('bd').room(0.5).roomsize(5)"],
+            ["roomlp", 1, 1, 1, "low-pass the reverb tail (Hz)", "s('bd').room(0.5).roomlp(5000)"],
+            ["roomfade", 1, 1, 1, "reverb fade time, seconds", "s('bd').room(0.5).roomfade(2)"],
+            ["delay", 1, 1, 1, "echo send amount, 0..1", "s('bd').delay(0.5)"],
+            ["delaytime", 1, 1, 1, "echo time, in cycles", "s('bd').delay(0.5).delaytime(0.125)"],
+            ["delayfeedback", 1, 1, 1, "echo feedback / repeats", "s('bd').delay(0.5).delayfeedback(0.7)"],
+            ["distort", 1, 1, 1, "wave-shaping distortion / overdrive", "s('bd').distort(3)"],
+            ["crush", 1, 1, 1, "bitcrush - lower = grittier", "s('bd').crush(8)"],
+            ["coarse", 1, 1, 1, "sample-rate reduction (lo-fi)", "s('bd').coarse(8)"],
+            ["phaser", 1, 1, 1, "phaser sweep speed", "note('c').s('sawtooth').phaser(2)"],
+            ["phaserdepth", 1, 1, 1, "how strongly the phaser acts (0..1)", "note('c').s('sawtooth').phaser(2).phaserdepth(0.75)"],
+            ["tremolosync", 1, 1, 1, "amplitude tremolo, synced to cycles", "note('d').s('supersaw').tremolosync(4)"],
+            ["tremolodepth", 1, 1, 1, "tremolo depth (0..1)", "note('a').s('pulse').tremolosync(4).tremolodepth(0.7)"],
+          ] },
+          { id: "signal", label: "Signals & modulation", blurb: "Continuous values for automation (LFOs, noise).", items: [
+            ["lfo", 1, 1, 1, "LFO: targets the param before it (or c:'lpf'). shape 0-4: tri/sine/ramp/saw/square", "note('c').lpf(800).lfo({sync:4, shape:'sine', da:400})"],
+            ["sine", 0, 0, 0, "smooth 0..1 LFO (sine)", "n(sine.segment(16).range(0,15))"],
+            ["cosine", 0, 0, 0, "cosine 0..1 LFO", "cosine.range(0,1)"],
+            ["saw", 0, 0, 0, "rising 0..1 ramp LFO", "saw.range(0,8).segment(8)"],
+            ["tri", 0, 0, 0, "triangle 0..1 LFO", "tri.range(0,7)"],
+            ["square", 0, 0, 0, "square 0..1 LFO (on/off)", "square.range(0,7)"],
+            ["rand", 0, 0, 0, "continuous random 0..1", "s('hh*8').gain(rand.range(0.4,1))"],
+            ["perlin", 0, 0, 0, "smooth random (perlin) noise", "s('bd*4').lpf(perlin.range(500,8000))"],
+            ["irand", 0, 1, 1, "random integer 0..n-1", "n(irand(8))"],
+            ["brand", 0, 0, 0, "random 0 or 1 (binary)", "s('hh*8').pan(brand)"],
+            ["range", 1, 1, 1, "map a 0..1 signal to lo..hi", "sine.range(200,2000)"],
+            ["segment", 1, 1, 1, "sample a signal N times per cycle", "sine.segment(8)"],
+            ["mousex", 0, 0, 0, "mouse X position, 0..1", "n(mousex.segment(4).range(0,7))"],
+            ["mousey", 0, 0, 0, "mouse Y position, 0..1", "n(mousey.segment(4).range(0,7))"],
+          ] },
+          { id: "time", label: "Time & rhythm", blurb: "Warp, swing, euclid and set the tempo.", items: [
+            ["fast", 1, 1, 1, "speed up by a factor", "s('bd hh sd hh').fast(2)"],
+            ["slow", 1, 1, 1, "slow down over n cycles", "s('bd hh sd hh').slow(2)"],
+            ["rev", 1, 1, 0, "reverse each cycle", "note('c d e g').rev()"],
+            ["palindrome", 1, 1, 0, "play forward then backward", "note('c d e g').palindrome()"],
+            ["iter", 1, 1, 1, "rotate the start point each cycle", "n('0 1 2 3').iter(4)"],
+            ["iterBack", 1, 1, 1, "like iter, but rotates backward", "n('0 1 2 3').iterBack(4)"],
+            ["ply", 1, 1, 1, "repeat each event n times", "s('bd sd').ply(2)"],
+            ["hurry", 1, 1, 1, "fast() and pitch the sample up", "s('break').hurry(2)"],
+            ["early", 1, 1, 1, "nudge earlier in time", "s('hh*4').early(0.1)"],
+            ["late", 1, 1, 1, "nudge later in time", "s('hh*4').late(0.1)"],
+            ["swingBy", 1, 1, 1, "swing by an amount over n subdivisions", "s('hh*8').swingBy(1/3, 4)"],
+            ["swing", 1, 1, 1, "swing shorthand (1/3)", "s('hh*8').swing(4)"],
+            ["compress", 1, 1, 1, "squeeze the cycle into a span", "s('bd sd').compress(0.25, 0.75)"],
+            ["zoom", 1, 1, 1, "play a slice of the pattern, stretched", "s('bd*2 hh*3 sd').zoom(0.25, 0.75)"],
+            ["linger", 1, 1, 1, "loop the first fraction of the cycle", "s('lt ht mt cp').linger(0.25)"],
+            ["fastGap", 1, 1, 1, "speed up, leaving a gap", "s('bd sd').fastGap(2)"],
+            ["inside", 1, 1, 1, "apply a function inside n cycles", "'0 1 2 3'.inside(4, rev)"],
+            ["outside", 1, 1, 1, "apply a function across n cycles", "'<0 2>'.outside(4, rev)"],
+            ["ribbon", 1, 1, 1, "loop a window of n cycles", "note('<c d e f>').ribbon(1, 2)"],
+            ["euclid", 1, 1, 1, "euclidean rhythm: pulses, steps", "note('c3').euclid(3, 8)"],
+            ["euclidRot", 1, 1, 1, "euclidean rhythm with rotation", "note('c3').euclidRot(3, 8, 1)"],
+            ["euclidLegato", 1, 1, 1, "euclid, notes held to next pulse", "note('c3').euclidLegato(3, 8)"],
+            ["setcpm", 0, 1, 1, "global tempo, cycles per minute", "setcpm(140/4)"],
+            ["cpm", 1, 1, 1, "tempo for this pattern (cycles/min)", "s('bd*4').cpm(132)"],
+            ["setcps", 0, 1, 1, "global tempo, cycles per second", "setcps(0.5)"],
+          ] },
+          { id: "structure", label: "Structure & arrangement", blurb: "Combine patterns and build a song.", items: [
+            ["stack", 0, 1, 1, "layer patterns to play together (alias: pr)", "stack(s('bd*4'), s('hh*8'))"],
+            ["cat", 0, 1, 1, "one pattern per cycle, in turn (slowcat)", "cat(s('bd*4'), s('cp*2'))"],
+            ["slowcat", 0, 1, 1, "same as cat - one per cycle", "slowcat(s('bd'), s('sd'))"],
+            ["seq", 0, 1, 1, "pack patterns into one cycle (fastcat)", "seq(s('bd'), s('hh'))"],
+            ["stepcat", 0, 1, 1, "concatenate by step weights (timeCat)", "stepcat([3,'e3'],[1,'g3'])"],
+            ["arrange", 0, 1, 1, "song sections by length in cycles", "arrange([4, verse], [4, chorus])"],
+            ["polymeter", 0, 1, 1, "align step counts as a polymeter (pm)", "polymeter('c eb g', 'c2 g2')"],
+            ["run", 0, 1, 1, "0..n-1 ascending sequence", "n(run(8))"],
+            ["struct", 1, 1, 1, "impose a rhythm from a t/~ pattern", "note('c,eb,g').struct('x ~ x x')"],
+            ["mask", 1, 1, 1, "gate sections on/off (great for builds)", "note('c eb g').mask('<0!4 1!28>')"],
+          ] },
+          { id: "cond", label: "Conditional & layering", blurb: "Do things every n cycles, or overlay copies.", items: [
+            ["every", 1, 1, 1, "apply a function every n cycles", "s('bd*4').every(4, x=>x.fast(2))"],
+            ["firstOf", 1, 1, 1, "apply on the first of every n cycles", "note('c d e g').firstOf(4, x=>x.rev())"],
+            ["lastOf", 1, 1, 1, "apply on the last of every n cycles", "note('c d e g').lastOf(4, x=>x.rev())"],
+            ["when", 1, 1, 1, "apply while a boolean pattern is true", "'c3 eb3 g3'.when('<0 1>', x=>x.sub(5)).note()"],
+            ["chunk", 1, 1, 1, "apply to a different slice each cycle", "'0 1 2 3'.chunk(4, x=>x.add(7))"],
+            ["chunkBack", 1, 1, 1, "like chunk, but moves backward", "'0 1 2 3'.chunkBack(4, x=>x.add(7))"],
+            ["someCycles", 1, 1, 1, "apply on random cycles (50%)", "s('bd').someCycles(x=>x.speed(0.5))"],
+            ["someCyclesBy", 1, 1, 1, "apply on random cycles by probability", "s('bd').someCyclesBy(0.3, x=>x.speed(0.5))"],
+            ["superimpose", 1, 1, 1, "overlay a transformed copy", "note('c3').superimpose(x=>x.add(7))"],
+            ["layer", 1, 1, 1, "stack several transformed copies", "note('c3').layer(x=>x.add('0,7'))"],
+            ["off", 1, 1, 1, "overlay a time-shifted copy", "note('c3').off(0.125, x=>x.add(7))"],
+            ["echo", 1, 1, 1, "n echoes with time + falloff", "s('bd sd').echo(3, 0.125, 0.8)"],
+            ["echoWith", 1, 1, 1, "echo, applying a function each repeat", "'<0 2>'.echoWith(4, 0.125, (p,n)=>p.add(n*2))"],
+            ["jux", 1, 1, 1, "apply a transform to one stereo side", "s('bd*2 sd').jux(rev)"],
+            ["juxBy", 1, 1, 1, "jux with adjustable stereo width", "s('bd*2 sd').juxBy(0.5, rev)"],
+            ["pick", 1, 1, 1, "pick patterns from a list by index", "'<0 1 2>'.pick(['bd', 'sd', 'hh'])"],
+            ["squeeze", 1, 1, 1, "pick and squeeze into the event", "squeeze('<0 1>', ['g a', 'f g'])"],
+            ["reset", 1, 1, 1, "restart the cycle on each trigger", "s('bd sd').reset('<x x(3,8)>')"],
+          ] },
+          { id: "random", label: "Randomness", blurb: "Controlled chaos: drop, vary and choose.", items: [
+            ["degrade", 1, 1, 0, "randomly drop ~50% of events", "s('hh*8').degrade()"],
+            ["degradeBy", 1, 1, 1, "randomly drop events by amount (0..1)", "s('hh*8').degradeBy(0.2)"],
+            ["undegradeBy", 1, 1, 1, "the inverse of degradeBy", "s('hh*8').undegradeBy(0.2)"],
+            ["sometimes", 1, 1, 1, "apply a function ~50% of the time", "s('hh*8').sometimes(x=>x.speed(0.5))"],
+            ["sometimesBy", 1, 1, 1, "apply with a given probability", "s('hh*8').sometimesBy(0.4, x=>x.speed(0.5))"],
+            ["often", 1, 1, 1, "apply ~75% of the time", "s('hh*8').often(x=>x.crush(4))"],
+            ["rarely", 1, 1, 1, "apply ~25% of the time", "s('hh*8').rarely(x=>x.speed(2))"],
+            ["almostAlways", 1, 1, 1, "apply ~90% of the time", "s('hh*8').almostAlways(x=>x.gain(0.5))"],
+            ["almostNever", 1, 1, 1, "apply ~10% of the time", "s('hh*8').almostNever(x=>x.crush(2))"],
+            ["choose", 0, 1, 1, "pick randomly from a list", "s(choose('bd', 'sd', 'hh'))"],
+            ["wchoose", 0, 1, 1, "weighted random pick", "s(wchoose(['bd',10], ['hh',1]))"],
+            ["chooseCycles", 0, 1, 1, "pick one element per cycle (randcat)", "chooseCycles('bd', 'hh', 'sd').s()"],
+          ] },
+          { id: "mix", label: "Mixing & dynamics", blurb: "Balance levels, pan, sends and compression.", items: [
+            ["gain", 1, 1, 1, "loudness, 0..1 (exponential)", "s('hh').gain(0.5)"],
+            ["velocity", 1, 1, 1, "velocity 0..1, multiplied with gain", "s('hh').velocity(0.8)"],
+            ["pan", 1, 1, 1, "stereo position, 0 left to 1 right", "s('bd').pan(0.5)"],
+            ["orbit", 1, 1, 1, "fx bus / group (note: limited in this embed)", "s('bd').orbit(2)"],
+            ["postgain", 1, 1, 1, "gain applied after effects", "s('bd').postgain(1.5)"],
+            ["compressor", 1, 1, 1, "compressor: thr:ratio:knee:atk:rel", "s('bd').compressor('-20:20:10:.002:.02')"],
+            ["duckorbit", 1, 1, 1, "sidechain-duck another orbit", "s('bd').duckorbit(2)"],
+            ["duckdepth", 1, 1, 1, "how much ducking is applied", "s('bd').duckorbit(2).duckdepth(0.8)"],
+            ["xfade", 0, 1, 1, "crossfade between two patterns", "xfade(s('bd*4'), 0.5, s('hh*8'))"],
+          ] },
+        ];
+
+        // Flattened, de-duplicated list for cross-category search.
+        var FN_ALL = (function () {
+          var seen = {}, out = [];
+          FN_CATS.forEach(function (c) {
+            c.items.forEach(function (it) {
+              if (seen[it[0]]) return;
+              seen[it[0]] = 1;
+              out.push({ it: it, cat: c.label });
+            });
+          });
+          return out;
+        })();
+
+        var pal = null, palView = "cats", palCat = null, palItems = [], palSel = 0;
+
+        function palSearchEl() { return pal.querySelector(".fnpal-search"); }
+
+        function buildPalette() {
+          pal = document.createElement("div");
+          pal.className = "fnpal";
+          pal.hidden = true;
+          pal.innerHTML =
+            '<div class="fnpal-head">' +
+            '<span class="fnpal-crumb"></span>' +
+            '<input class="fnpal-search" type="text" spellcheck="false" placeholder="search, or pick a category" />' +
+            "</div>" +
+            '<div class="fnpal-body"><ul class="fnpal-list"></ul><div class="fnpal-preview"></div></div>' +
+            '<div class="fnpal-hint">up/down move - Enter select - Esc back/close</div>';
+          document.body.appendChild(pal);
+          palSearchEl().addEventListener("input", function () { palSel = 0; renderPalette(); });
+          palSearchEl().addEventListener("keydown", onPalKey);
+          document.addEventListener("mousedown", function (e) {
+            if (pal && !pal.hidden && !pal.contains(e.target) && e.target !== els.fns) closePalette();
+          });
+        }
+
+        function curRows() {
+          var q = palSearchEl().value.trim().toLowerCase();
+          if (q) {
+            return FN_ALL.filter(function (r) {
+              return r.it[0].toLowerCase().indexOf(q) >= 0 || r.it[4].toLowerCase().indexOf(q) >= 0;
+            }).map(function (r) { return { type: "fn", it: r.it, cat: r.cat }; });
+          }
+          if (palView === "cats") {
+            return FN_CATS.map(function (c) { return { type: "cat", cat: c }; });
+          }
+          var c = FN_CATS.filter(function (x) { return x.id === palCat; })[0];
+          return (c ? c.items : []).map(function (it) { return { type: "fn", it: it, cat: c.label }; });
+        }
+
+        function renderPalette() {
+          var rows = curRows();
+          palItems = rows;
+          if (palSel >= rows.length) palSel = rows.length - 1;
+          if (palSel < 0) palSel = 0;
+          var q = palSearchEl().value.trim();
+          var crumb = pal.querySelector(".fnpal-crumb");
+          if (q) crumb.textContent = "search // " + rows.length;
+          else if (palView === "cats") crumb.textContent = "functions";
+          else {
+            var cc = FN_CATS.filter(function (x) { return x.id === palCat; })[0];
+            crumb.textContent = (cc ? cc.label : "") + "  <  back";
+          }
+          var ul = pal.querySelector(".fnpal-list");
+          ul.textContent = "";
+          rows.forEach(function (r, i) {
+            var li = document.createElement("li");
+            if (r.type === "cat") {
+              li.className = "cat";
+              li.textContent = r.cat.label;
+              var t = document.createElement("span");
+              t.className = "tag";
+              t.textContent = r.cat.items.length;
+              li.appendChild(t);
+            } else {
+              li.textContent = r.it[0];
+              if (q) {
+                var t2 = document.createElement("span");
+                t2.className = "tag";
+                t2.textContent = r.cat;
+                li.appendChild(t2);
+              }
+            }
+            li.addEventListener("mousemove", function () {
+              if (palSel !== i) { palSel = i; paintSel(); preview(); }
+            });
+            li.addEventListener("click", function () { palSel = i; activatePal(); });
+            ul.appendChild(li);
+          });
+          paintSel();
+          preview();
+        }
+
+        function paintSel() {
+          var lis = pal.querySelectorAll(".fnpal-list li");
+          for (var i = 0; i < lis.length; i++) lis[i].classList.toggle("sel", i === palSel);
+          if (lis[palSel] && lis[palSel].scrollIntoView) lis[palSel].scrollIntoView({ block: "nearest" });
+        }
+
+        function preview() {
+          var pv = pal.querySelector(".fnpal-preview");
+          pv.textContent = "";
+          var r = palItems[palSel];
+          if (!r) return;
+          var name = document.createElement("div");
+          name.className = "pv-name";
+          var desc = document.createElement("div");
+          desc.className = "pv-desc";
+          if (r.type === "cat") {
+            name.textContent = r.cat.label;
+            desc.textContent = r.cat.blurb;
+            var meta = document.createElement("div");
+            meta.className = "pv-desc";
+            meta.style.color = "var(--dim)";
+            meta.textContent = r.cat.items.length + " functions - Enter to open";
+            pv.appendChild(name); pv.appendChild(desc); pv.appendChild(meta);
+          } else {
+            var it = r.it;
+            name.textContent = it[0] + (it[2] ? "()" : "");
+            desc.textContent = it[4];
+            var ex = document.createElement("code");
+            ex.className = "pv-ex";
+            ex.textContent = it[5];
+            pv.appendChild(name); pv.appendChild(desc); pv.appendChild(ex);
+          }
+        }
+
+        function activatePal() {
+          var r = palItems[palSel];
+          if (!r) return;
+          if (r.type === "cat") {
+            palView = "cat";
+            palCat = r.cat.id;
+            palSel = 0;
+            palSearchEl().value = "";
+            renderPalette();
+            palSearchEl().focus();
+          } else {
+            insertFn(r.it);
+            closePalette();
+          }
+        }
+
+        function onPalKey(e) {
+          if (e.key === "ArrowDown") { e.preventDefault(); palSel = Math.min(palSel + 1, palItems.length - 1); paintSel(); preview(); }
+          else if (e.key === "ArrowUp") { e.preventDefault(); palSel = Math.max(palSel - 1, 0); paintSel(); preview(); }
+          else if (e.key === "Enter") { e.preventDefault(); activatePal(); }
+          else if (e.key === "Escape") {
+            e.preventDefault();
+            if (palSearchEl().value) { palSearchEl().value = ""; palSel = 0; renderPalette(); }
+            else if (palView === "cat") { palView = "cats"; palCat = null; palSel = 0; renderPalette(); }
+            else closePalette();
+          } else if (e.key === "Backspace") {
+            if (!palSearchEl().value && palView === "cat") {
+              e.preventDefault();
+              palView = "cats"; palCat = null; palSel = 0; renderPalette();
+            }
+          }
+        }
+
+        function insertFn(it) {
+          var view = host.editor && host.editor.editor;
+          if (!view) return;
+          var sel = view.state.selection.main;
+          var doc = view.state.doc;
+          var line = doc.lineAt(sel.from);
+          var before = doc.sliceString(line.from, sel.from);
+          var wm = before.match(/[A-Za-z0-9_]*$/);
+          var word = wm ? wm[0] : "";
+          var from = sel.from - word.length;
+          var prev = from > 0 ? doc.sliceString(from - 1, from) : "";
+          var lead = it[1] && prev !== "." ? "." : "";
+          var text, caret;
+          if (!it[2]) { text = lead + it[0]; caret = from + text.length; }
+          else if (it[3]) { text = lead + it[0] + "()"; caret = from + text.length - 1; }
+          else { text = lead + it[0] + "()"; caret = from + text.length; }
+          view.dispatch({ changes: { from: from, to: sel.from, insert: text }, selection: { anchor: caret } });
+          view.focus();
+          setStatus("inserted " + it[0] + (it[2] ? "()" : ""));
+        }
+
+        function currentWord() {
+          var view = host.editor && host.editor.editor;
+          if (!view) return "";
+          var sel = view.state.selection.main;
+          var doc = view.state.doc;
+          var line = doc.lineAt(sel.from);
+          var before = doc.sliceString(line.from, sel.from);
+          var m = before.match(/[A-Za-z0-9_]*$/);
+          return m ? m[0] : "";
+        }
+
+        function positionPalette() {
+          var view = host.editor && host.editor.editor;
+          var left = 120, top = 150;
+          try {
+            if (view) {
+              var co = view.coordsAtPos(view.state.selection.main.head);
+              if (co) { left = co.left; top = co.bottom + 6; }
+            }
+          } catch (_) {}
+          var w = pal.offsetWidth || 540, h = pal.offsetHeight || 300;
+          if (left + w > window.innerWidth - 12) left = window.innerWidth - w - 12;
+          if (left < 12) left = 12;
+          if (top + h > window.innerHeight - 12) top = Math.max(12, window.innerHeight - h - 12);
+          pal.style.left = left + "px";
+          pal.style.top = top + "px";
+        }
+
+        function openPalette() {
+          if (!pal) buildPalette();
+          palView = "cats";
+          palCat = null;
+          palSel = 0;
+          // Prefill with the word under the cursor: empty -> categories first;
+          // partial word -> jump straight to a cross-category search.
+          palSearchEl().value = currentWord();
+          pal.hidden = false;
+          renderPalette();
+          positionPalette();
+          palSearchEl().focus();
+        }
+
+        function closePalette() {
+          if (pal) pal.hidden = true;
+          var view = host.editor && host.editor.editor;
+          if (view) view.focus();
+        }
+
+        // Tab to indent / Shift+Tab to dedent. CodeMirror 6 deliberately lets Tab move
+        // focus (accessibility default) unless an indentWithTab keymap is added; the embed
+        // doesn't expose its keymap to us, so we drive indentation through a transaction
+        // ourselves. 2-space indent unit to match the patterns in this repo.
+        function handleTab(view, shift) {
+          var INDENT = "  ";
+          var state = view.state, doc = state.doc, ranges = state.selection.ranges;
+          var multiline = ranges.some(function (r) {
+            return doc.lineAt(r.from).number !== doc.lineAt(r.to).number;
+          });
+          // Plain Tab with a caret (or single-line selection): just insert/replace.
+          if (!shift && !multiline) {
+            view.dispatch(state.replaceSelection(INDENT));
+            return;
+          }
+          // Otherwise indent/dedent every line touched by any selection range.
+          var lines = {};
+          ranges.forEach(function (r) {
+            var a = doc.lineAt(r.from).number, b = doc.lineAt(r.to).number;
+            for (var n = a; n <= b; n++) lines[n] = true;
+          });
+          var changes = [];
+          Object.keys(lines).forEach(function (k) {
+            var line = doc.line(+k);
+            if (shift) {
+              var t = line.text, remove = 0;
+              if (t[0] === "\t") remove = 1;
+              else while (remove < INDENT.length && t[remove] === " ") remove++;
+              if (remove > 0) changes.push({ from: line.from, to: line.from + remove });
+            } else {
+              changes.push({ from: line.from, insert: INDENT });
+            }
+          });
+          if (changes.length) {
+            view.dispatch({ changes: changes, userEvent: shift ? "delete.dedent" : "input.indent" });
+          }
+        }
+
+        function setupFnPalette() {
+          if (els.fns) els.fns.addEventListener("click", function () { openPalette(); });
+          var view = host.editor && host.editor.editor;
+          if (view && view.contentDOM && !view.contentDOM.__fnpal) {
+            view.contentDOM.__fnpal = true;
+            // Capture phase + stopImmediatePropagation so Strudel's own Ctrl+Space
+            // (native completion) doesn't also fire — our categorized palette takes over.
+            view.contentDOM.addEventListener("keydown", function (e) {
+              if (e.ctrlKey && !e.shiftKey && !e.altKey && (e.code === "Space" || e.key === " ")) {
+                e.preventDefault();
+                e.stopImmediatePropagation();
+                openPalette();
+                return;
+              }
+              if (e.key === "Tab" && !e.ctrlKey && !e.altKey && !e.metaKey) {
+                e.preventDefault();
+                e.stopImmediatePropagation();
+                handleTab(view, e.shiftKey);
+              }
+            }, true);
+          }
+        }
+
         // Wait for the lazily-created editor instance, then finish setup.
         (function whenReady(attempt) {
           attempt = attempt || 0;
           var editor = host && host.editor;
           if (editor) {
-            // Enable Strudel's docs-driven autocompletion (shipped but off by default).
+            // Keep Strudel's native popup OFF — our categorized palette (Ctrl+Space /
+            // Functions button) is the single autocomplete now, so there's only one menu.
             if (typeof editor.setAutocompletionEnabled === "function") {
-              editor.setAutocompletionEnabled(true);
+              editor.setAutocompletionEnabled(false);
             } else if (typeof editor.updateSettings === "function") {
-              editor.updateSettings({ isAutoCompletionEnabled: true });
+              editor.updateSettings({ isAutoCompletionEnabled: false });
+            }
+            // Surface runtime evaluation errors (failed sample load, unknown sound,
+            // JS error) in the status bar instead of failing silently — Strudel keeps
+            // the last good pattern playing on error, so problems are otherwise easy to
+            // miss. Wraps evaluate(), which both Ctrl+Enter and save-reeval call.
+            if (typeof editor.evaluate === "function" && !editor.__wrappedEval) {
+              var origEval = editor.evaluate.bind(editor);
+              editor.evaluate = function () {
+                var p;
+                try {
+                  // If any block is collapsed, evaluate the reconstructed full code so
+                  // hidden blocks keep playing; otherwise use the editor's own path.
+                  if (Object.keys(collapsedBodies).length && editor.repl && typeof editor.repl.evaluate === "function") {
+                    p = editor.repl.evaluate(reconstructFullCode());
+                  } else {
+                    p = origEval();
+                  }
+                } catch (err) {
+                  setStatus("eval error: " + (err && err.message ? err.message : err), true);
+                  throw err;
+                }
+                Promise.resolve(p).catch(function (err) {
+                  setStatus("eval error: " + (err && err.message ? err.message : err), true);
+                });
+                return p;
+              };
+              editor.__wrappedEval = true;
             }
             // Establish the dirty baseline, then watch for edits.
             lastSaved = editor.code;
             refreshDirty();
             checkSyntax();
+            renderRail(true);
+            startRegionDecoration();
+            setupFnPalette();
+            scheduleLayout();
+            window.addEventListener("resize", scheduleLayout);
             setInterval(function () {
               refreshDirty();
               checkSyntax();
+              renderRail(false);
+              scheduleLayout();
             }, 400);
             return;
           }
