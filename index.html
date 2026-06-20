@@ -441,9 +441,147 @@
         font-size: 10px;
         letter-spacing: 0.08em;
       }
+
+      /* ---- controls panel: slide-in from left, tab handle at viewport center ---- */
+      #ctrl-panel {
+        position: fixed;
+        left: 0; top: 0; bottom: 0;
+        width: 180px;
+        z-index: 300;
+        background: rgba(6, 9, 15, 0.97);
+        border-right: 1px solid var(--line);
+        box-shadow: 3px 0 28px rgba(0, 0, 0, 0.65), 0 0 0 1px rgba(0, 240, 255, 0.06) inset;
+        display: flex;
+        flex-direction: column;
+        transform: translateX(-180px);
+        transition: transform 0.2s ease;
+        overflow: hidden;
+      }
+      #ctrl-panel.cp-open { transform: translateX(0); }
+
+      /* Tab handle — fixed to viewport, slides right when panel opens */
+      #ctrl-panel-tog {
+        position: fixed;
+        left: 0;
+        top: 50%;
+        transform: translateY(-50%);
+        z-index: 301;
+        width: 24px;
+        height: 76px;
+        border: 1px solid rgba(0, 240, 255, 0.35);
+        border-left: none;
+        border-radius: 0 12px 12px 0;
+        background: rgba(6, 9, 15, 0.97);
+        box-shadow: 3px 0 18px rgba(0, 0, 0, 0.55), 0 0 14px rgba(0, 240, 255, 0.09) inset;
+        color: var(--cyan);
+        cursor: pointer;
+        font: inherit;
+        font-size: 10px;
+        text-transform: uppercase;
+        letter-spacing: 0.15em;
+        padding: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: left 0.2s ease, box-shadow 0.12s;
+        writing-mode: vertical-lr;
+      }
+      /* Move tab to panel's right edge when panel is open */
+      #ctrl-panel.cp-open ~ #ctrl-panel-tog { left: 180px; }
+      #ctrl-panel-tog:hover {
+        border-color: rgba(0, 240, 255, 0.65);
+        box-shadow: 3px 0 22px rgba(0, 0, 0, 0.55), 0 0 20px rgba(0, 240, 255, 0.2) inset;
+      }
+
+      #ctrl-panel-hd {
+        display: flex;
+        align-items: center;
+        padding: 9px 10px;
+        border-bottom: 1px solid var(--line);
+        background: linear-gradient(180deg, rgba(0, 240, 255, 0.07), transparent);
+        flex-shrink: 0;
+      }
+      .cp-title {
+        font-size: 10px;
+        letter-spacing: 0.22em;
+        text-transform: uppercase;
+        color: var(--cyan);
+        text-shadow: 0 0 8px rgba(0, 240, 255, 0.4);
+      }
+      #ctrl-panel-bd {
+        flex: 1;
+        overflow-y: auto;
+        overflow-x: hidden;
+        padding: 4px 0;
+      }
+      .ctrl-hint {
+        padding: 9px 10px;
+        font-size: 10px;
+        color: var(--dim);
+        line-height: 1.65;
+        letter-spacing: 0.03em;
+        white-space: normal;
+      }
+      .ctrl-row {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 5px 9px;
+        border-bottom: 1px solid rgba(22, 32, 46, 0.5);
+      }
+      .ctrl-row:last-child { border-bottom: 0; }
+      .ctrl-label {
+        flex: 1;
+        font-size: 11px;
+        letter-spacing: 0.05em;
+        color: var(--text);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        min-width: 0;
+      }
+      .ctrl-row.ctrl-muted .ctrl-label { color: var(--dim); text-decoration: line-through; }
+      .ctrl-mtog {
+        font: inherit;
+        font-size: 10px;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        border: 1px solid rgba(0, 240, 255, 0.35);
+        border-radius: 3px;
+        background: transparent;
+        color: var(--cyan);
+        padding: 1px 6px;
+        cursor: pointer;
+        flex-shrink: 0;
+        transition: box-shadow 0.1s;
+      }
+      .ctrl-mtog:hover { box-shadow: 0 0 8px rgba(0, 240, 255, 0.3); }
+      .ctrl-row.ctrl-muted .ctrl-mtog {
+        color: var(--magenta);
+        border-color: rgba(255, 43, 214, 0.4);
+      }
+      .ctrl-row.ctrl-muted .ctrl-mtog:hover { box-shadow: 0 0 8px rgba(255, 43, 214, 0.3); }
+      .ctrl-section-hd {
+        padding: 6px 9px 3px;
+        font-size: 9px;
+        letter-spacing: 0.2em;
+        text-transform: uppercase;
+        color: var(--dim);
+        border-bottom: 1px solid rgba(22, 32, 46, 0.8);
+        margin-top: 6px;
+      }
+      .ctrl-section-hd:first-child { margin-top: 0; }
+      .ctrl-row.ctrl-in { padding-left: 14px; }
     </style>
   </head>
   <body>
+    <div id="ctrl-panel">
+      <div id="ctrl-panel-hd">
+        <span class="cp-title">Controls</span>
+      </div>
+      <div id="ctrl-panel-bd"></div>
+    </div>
+    <button id="ctrl-panel-tog" title="toggle controls panel">CTRL</button>
     <header>
       <h1 class="title">STRUDEL <span>//</span> NEON GRID</h1>
       <p class="sub">
@@ -579,9 +717,37 @@ stack(
         }
 
         function getCode() { return host.editor ? host.editor.code : ""; }
-        function setCode(text) {
+        // resetCursor=true is for loading a whole new file (new/open) where jumping to the
+        // top is correct. Otherwise (panel buttons editing the buffer in place) we restore
+        // the caret to the same line/column it was on and refocus the editor, so keyboard
+        // users don't have to click back into the canvas to find their place again.
+        function setCode(text, resetCursor) {
           if (!host.editor) throw new Error("editor not ready yet — wait a moment and retry");
+          var view = host.editor.editor;
+          var saved = null;
+          if (view) {
+            if (!resetCursor) {
+              var head = view.state.selection.main.head;
+              var line = view.state.doc.lineAt(head);
+              saved = { line: line.number, col: head - line.from };
+            }
+            // Park caret at 0 before handing off — Strudel's setCode preserves the current
+            // selection, and if the new text is shorter than the old cursor position CM throws
+            // "Position N is out of range for changeset of length M" (seen when opening a
+            // shorter file or collapsing a block while the cursor sits below it).
+            try { view.dispatch({ selection: { anchor: 0 } }); } catch (e) {}
+          }
           host.editor.setCode(text);
+          if (view && saved) {
+            try {
+              var doc = view.state.doc;
+              var lineNum = Math.min(saved.line, doc.lines);
+              var ln = doc.line(lineNum);
+              var pos = ln.from + Math.min(saved.col, ln.length);
+              view.dispatch({ selection: { anchor: pos, head: pos }, scrollIntoView: true });
+            } catch (e) {}
+            view.focus();
+          }
         }
 
         // --- Blocks: //#region <label> ... //#endregion -----------------------------
@@ -596,6 +762,7 @@ stack(
         var MUTED = "//#muted"; // marker line: block body below is commented out (muted)
         var collapsedBodies = {}; // label -> stashed body text
         var lastRailSig = null;
+        var lastCtrlSig = null;
 
         function blockLabel(line) {
           var m = line.match(REGION_RE);
@@ -652,6 +819,10 @@ stack(
           var pos = 0;
           for (var i = 0; i < lineIdx && i < lines.length; i++) pos += lines[i].length + 1;
           return pos;
+        }
+
+        function posToLine(code, pos) {
+          return code.slice(0, pos).split('\n').length - 1;
         }
 
         function toggleCollapse(label) {
@@ -759,6 +930,34 @@ stack(
           }
         }
 
+        function jumpToMarker(re, forward) {
+          var view = host.editor && host.editor.editor;
+          if (!view) return;
+          var code = getCode();
+          var lines = code.split('\n');
+          var curLine = view.state.doc.lineAt(view.state.selection.main.head).number - 1;
+          var matches = [];
+          for (var i = 0; i < lines.length; i++) {
+            if (re.test(lines[i])) matches.push(i);
+          }
+          if (!matches.length) return;
+          var target = null;
+          if (forward) {
+            for (var j = 0; j < matches.length; j++) {
+              if (matches[j] > curLine) { target = matches[j]; break; }
+            }
+            if (target === null) target = matches[0];
+          } else {
+            for (var k = matches.length - 1; k >= 0; k--) {
+              if (matches[k] < curLine) { target = matches[k]; break; }
+            }
+            if (target === null) target = matches[matches.length - 1];
+          }
+          var pos = lineToPos(code, target);
+          view.dispatch({ selection: { anchor: pos, head: pos }, scrollIntoView: true });
+          view.focus();
+        }
+
         function addBlockFromSelection() {
           var view = host.editor && host.editor.editor;
           if (!view) return;
@@ -773,6 +972,156 @@ stack(
           setCode(before + open + midOut + ENDREGION + tail);
           renderRail(true);
         }
+
+        // --- Mute-tag controls panel --------------------------------------------------
+        // Tag syntax in code: /*mute <name> [false]*/ ... /*end*/
+        // The [true|false] status is written back into the source on each toggle so the
+        // state is preserved when the file is saved and reopened.
+        var MUTE_TAG_RE = /\/\*mute\s+(.*?)\s+\[(true|false)\]\s*\*\//g;
+        var MUTE_END_STR = '/*end*/';
+
+        function parseMuteTags(code) {
+          var tags = [];
+          MUTE_TAG_RE.lastIndex = 0;
+          var m;
+          while ((m = MUTE_TAG_RE.exec(code)) !== null) {
+            var name = m[1].trim();
+            if (!name) continue;
+            var muted = m[2] === 'true';
+            var tagStart = m.index;
+            var tagEnd = tagStart + m[0].length;
+            var endIdx = code.indexOf(MUTE_END_STR, tagEnd);
+            if (endIdx === -1) continue;
+            tags.push({
+              name: name, muted: muted,
+              tagStart: tagStart, tagEnd: tagEnd,
+              bodyStart: tagEnd, bodyEnd: endIdx,
+              endTagEnd: endIdx + MUTE_END_STR.length,
+              fullMatch: m[0]
+            });
+          }
+          return tags;
+        }
+
+        function toggleMuteTag(name) {
+          var code = getCode();
+          var tags = parseMuteTags(code);
+          var tag = null;
+          for (var i = 0; i < tags.length; i++) { if (tags[i].name === name) { tag = tags[i]; break; } }
+          if (!tag) return;
+          var body = code.slice(tag.bodyStart, tag.bodyEnd);
+          var newBody, newTagStr;
+          if (tag.muted) {
+            // Unmute: strip /* */ wrapper added during muting
+            var b = body;
+            if (b.startsWith('/*')) b = b.slice(2);
+            if (b.endsWith('*/')) b = b.slice(0, -2);
+            newBody = b;
+            newTagStr = tag.fullMatch.replace('[true]', '[false]');
+          } else {
+            // Mute: wrap entire body in a block comment
+            newBody = '/*' + body + '*/';
+            newTagStr = tag.fullMatch.replace('[false]', '[true]');
+          }
+          var newCode = code.slice(0, tag.tagStart) + newTagStr + newBody + code.slice(tag.bodyEnd);
+          setCode(newCode);
+          lastCtrlSig = null;
+          renderCtrlPanel(true);
+          reevaluateIfPlaying();
+        }
+
+        function renderCtrlPanel(force) {
+          var bd = document.getElementById('ctrl-panel-bd');
+          if (!bd) return;
+          var code = getCode();
+          var tags = parseMuteTags(code);
+          var blocks = parseBlocks(code);
+
+          // Map each tag to its enclosing region label (null if ungrouped).
+          var tagged = tags.map(function (tag) {
+            var line = posToLine(code, tag.tagStart);
+            var region = null;
+            for (var i = 0; i < blocks.length; i++) {
+              if (line > blocks[i].start && line < blocks[i].end) { region = blocks[i].label; break; }
+            }
+            return { tag: tag, region: region };
+          });
+
+          var sig = tagged.map(function (t) {
+            return (t.region || '') + '|' + t.tag.name + ':' + t.tag.muted;
+          }).join(',');
+          if (!force && sig === lastCtrlSig) return;
+          lastCtrlSig = sig;
+          bd.textContent = '';
+
+          if (tags.length === 0) {
+            var hint = document.createElement('div');
+            hint.className = 'ctrl-hint';
+            hint.textContent = 'tag sections with /*mute name [false]*/ ... /*end*/ to add controls here';
+            bd.appendChild(hint);
+            return;
+          }
+
+          // Collect groups in encounter order; null key = ungrouped (rendered first, no header).
+          var groups = {}, groupOrder = [];
+          tagged.forEach(function (item) {
+            var key = item.region || '';
+            if (!Object.prototype.hasOwnProperty.call(groups, key)) {
+              groups[key] = [];
+              groupOrder.push(key);
+            }
+            groups[key].push(item.tag);
+          });
+
+          groupOrder.forEach(function (key) {
+            if (key) {
+              var hd = document.createElement('div');
+              hd.className = 'ctrl-section-hd';
+              hd.textContent = key;
+              bd.appendChild(hd);
+            }
+            groups[key].forEach(function (tag) {
+              var row = document.createElement('div');
+              row.className = 'ctrl-row' + (tag.muted ? ' ctrl-muted' : '') + (key ? ' ctrl-in' : '');
+              var lbl = document.createElement('span');
+              lbl.className = 'ctrl-label';
+              lbl.textContent = tag.name;
+              var btn = document.createElement('button');
+              btn.className = 'ctrl-mtog';
+              btn.textContent = tag.muted ? 'off' : 'on';
+              btn.title = tag.muted ? 'unmute — uncomment this section' : 'mute — comment out this section';
+              btn.addEventListener('click', (function (n) {
+                return function () { toggleMuteTag(n); };
+              })(tag.name));
+              row.appendChild(lbl);
+              row.appendChild(btn);
+              bd.appendChild(row);
+            });
+          });
+        }
+
+        // Panel collapse state (persisted in localStorage; default = expanded)
+        var ctrlPanelCollapsed = localStorage.getItem('strudelCPCol') === '1';
+        function applyPanelCollapse() {
+          var panel = document.getElementById('ctrl-panel');
+          var tog = document.getElementById('ctrl-panel-tog');
+          if (!panel) return;
+          panel.classList.toggle('cp-open', !ctrlPanelCollapsed);
+          if (tog) tog.textContent = ctrlPanelCollapsed ? 'CTRL' : 'X';
+        }
+        function toggleCtrlPanel() {
+          ctrlPanelCollapsed = !ctrlPanelCollapsed;
+          localStorage.setItem('strudelCPCol', ctrlPanelCollapsed ? '1' : '0');
+          applyPanelCollapse();
+          // The toggle button steals DOM focus on click; hand it back to the editor at
+          // whatever line/column it already had (we never moved the selection) so
+          // keyboard users don't have to click into the canvas to keep typing.
+          var view = host.editor && host.editor.editor;
+          if (view) view.focus();
+        }
+        applyPanelCollapse();
+        var ctrlTog = document.getElementById('ctrl-panel-tog');
+        if (ctrlTog) ctrlTog.addEventListener('click', toggleCtrlPanel);
 
         // Legacy top "blocks rail". The per-block controls now live in each sheet's header
         // (see layoutSheets), so there's no rail element and this is inert — kept guarded so
@@ -1083,9 +1432,9 @@ stack(
           if (isDirty() && !window.confirm("Discard unsaved changes and start a new pattern?")) {
             return;
           }
-          setCode(NEW_TEMPLATE);
           collapsedBodies = {};
           lastRailSig = null;
+          setCode(NEW_TEMPLATE, true);
           fileHandle = null;
           lastSaved = NEW_TEMPLATE;
           setFileName("untitled");
@@ -1097,9 +1446,9 @@ stack(
               var picked = await window.showOpenFilePicker({ multiple: false });
               fileHandle = picked[0];
               var text = await (await fileHandle.getFile()).text();
-              setCode(text);
               collapsedBodies = {};
               lastRailSig = null;
+              setCode(text, true);
               lastSaved = text;
               setFileName(fileHandle.name);
               setStatus("opened " + fileHandle.name);
@@ -1168,9 +1517,9 @@ stack(
             var reader = new FileReader();
             reader.onload = function () {
               var text = String(reader.result);
-              setCode(text);
               collapsedBodies = {};
               lastRailSig = null;
+              setCode(text, true);
               lastSaved = text;
               setFileName(f.name);
             };
@@ -1732,6 +2081,15 @@ stack(
                 openPalette();
                 return;
               }
+              // Alt+Down/Up → next/prev $: / _$:    Ctrl+Alt+Down/Up → next/prev //#region
+              if (e.altKey && !e.metaKey && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
+                e.preventDefault();
+                e.stopImmediatePropagation();
+                var fwd = e.key === "ArrowDown";
+                if (e.ctrlKey) jumpToMarker(/^\s*\/\/#region\b/, fwd);
+                else jumpToMarker(/^\s*_?\$:/, fwd);
+                return;
+              }
               if (e.key === "Tab" && !e.ctrlKey && !e.altKey && !e.metaKey) {
                 e.preventDefault();
                 e.stopImmediatePropagation();
@@ -1785,6 +2143,7 @@ stack(
             refreshDirty();
             checkSyntax();
             renderRail(true);
+            renderCtrlPanel(true);
             startRegionDecoration();
             setupFnPalette();
             scheduleLayout();
@@ -1793,6 +2152,7 @@ stack(
               refreshDirty();
               checkSyntax();
               renderRail(false);
+              renderCtrlPanel(false);
               scheduleLayout();
             }, 400);
             return;

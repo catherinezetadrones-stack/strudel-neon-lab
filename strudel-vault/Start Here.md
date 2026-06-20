@@ -37,10 +37,11 @@ with `[[wikilinks]]` — follow the connections.
 15. [[15 This Sandbox]] — how *this* project's editor + example songs work.
 16. [[16 Glossary]] — quick definitions.
 17. [[17 Resources]] — external links.
+18. [[18 Rhythm, Drums and Breakbeats]] — deep dive: grooves, Euclidean, chopping breaks, variation, one-shots.
 
 ## Maps of content
 
-- **Time & structure:** [[2 Cycles and Tempo]] · [[4 Mini-Notation]] · [[11 Transforming Patterns]] · [[12 Structure and Arrangement]]
+- **Time & structure:** [[2 Cycles and Tempo]] · [[4 Mini-Notation]] · [[11 Transforming Patterns]] · [[12 Structure and Arrangement]] · [[18 Rhythm, Drums and Breakbeats]]
 - **Sound design:** [[5 Sounds and Samples]] · [[8 Synthesis]] · [[9 Effects]] · [[10 Signals and Modulation]] · [[13 Mixing and Levels]]
 - **Harmony:** [[6 Notes, Scales and Harmony]] · [[7 Chords and Voicings]]
 - **Doing it here:** [[15 This Sandbox]] · [[14 Cookbook]] · [[1 From Ableton to Strudel]]
