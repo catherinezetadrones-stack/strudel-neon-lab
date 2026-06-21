@@ -833,11 +833,48 @@ stack(
               lines[i + 1].trim() === COLLAPSED &&
               collapsedBodies[label] !== undefined
             ) {
+              // Keep the //#collapsed marker (then the stashed body) so a saved file records
+              // the collapsed state and reopens collapsed — symmetric with extractCollapsed()
+              // on load. The marker is a comment, so eval/syntax-check ignore it.
+              out.push(COLLAPSED);
               if (collapsedBodies[label] !== "") out.push(collapsedBodies[label]);
-              i++; // skip the //#collapsed marker line
+              i++; // skip the original //#collapsed marker line (re-added above)
             }
           }
           return out.join("\n");
+        }
+
+        // Inverse of reconstructFullCode for loading. Pull each collapsed block's body (the
+        // lines between //#collapsed and //#endregion in a saved file) out of the buffer and
+        // into collapsedBodies, leaving just the //#region / //#collapsed / //#endregion
+        // markers visible. Files without //#collapsed markers load fully expanded (bodies={}),
+        // so older patterns are unaffected.
+        function extractCollapsed(text) {
+          var lines = text.split("\n");
+          var out = [];
+          var bodies = {};
+          for (var i = 0; i < lines.length; i++) {
+            out.push(lines[i]);
+            var label = blockLabel(lines[i]);
+            if (label !== null && lines[i + 1] !== undefined && lines[i + 1].trim() === COLLAPSED) {
+              var j = i + 2;
+              while (j < lines.length && lines[j].trim() !== ENDREGION) j++;
+              bodies[label] = lines.slice(i + 2, j).join("\n"); // "" when collapsed with no body
+              out.push(COLLAPSED);
+              i = j - 1; // resume so the //#endregion line is emitted next iteration
+            }
+          }
+          return { code: out.join("\n"), bodies: bodies };
+        }
+
+        // Load file text into the editor, restoring any saved collapsed state. lastSaved is
+        // set from the reconstructed code so the freshly opened file isn't flagged dirty.
+        function loadIntoEditor(text) {
+          var ex = extractCollapsed(text);
+          collapsedBodies = ex.bodies;
+          lastRailSig = null;
+          setCode(ex.code, true);
+          lastSaved = reconstructFullCode();
         }
 
         function lineToPos(code, lineIdx) {
@@ -1475,11 +1512,8 @@ stack(
               var path = await T.open({ multiple: false, filters: TAURI_FILTERS });
               if (!path) return; // user cancelled
               var text = await T.invoke("read_text_file", { path: path });
-              collapsedBodies = {};
-              lastRailSig = null;
-              setCode(text, true);
+              loadIntoEditor(text);
               currentPath = path;
-              lastSaved = text;
               setFileName(baseName(path));
               setStatus("opened " + baseName(path));
               return;
@@ -1488,10 +1522,7 @@ stack(
               var picked = await window.showOpenFilePicker({ multiple: false });
               fileHandle = picked[0];
               var text = await (await fileHandle.getFile()).text();
-              collapsedBodies = {};
-              lastRailSig = null;
-              setCode(text, true);
-              lastSaved = text;
+              loadIntoEditor(text);
               setFileName(fileHandle.name);
               setStatus("opened " + fileHandle.name);
             } else {
@@ -1588,10 +1619,7 @@ stack(
             var reader = new FileReader();
             reader.onload = function () {
               var text = String(reader.result);
-              collapsedBodies = {};
-              lastRailSig = null;
-              setCode(text, true);
-              lastSaved = text;
+              loadIntoEditor(text);
               setFileName(f.name);
             };
             reader.readAsText(f);
