@@ -48,9 +48,9 @@ let tamb = s("[ftamborine:0]*16").struct("<1>*16")
 //#regionjbsmooth bass
 let jb = note("<[1*1 _ 1*1 _ _ ] [4*2] [3*1 _ 3*1_ _ _ ] 6 [3*1 _ 3*1_ _ _ ] 4 [-4*1 _ -4*1_ _ _] -1>/1")
     .layer(
-      /*mute squareBass [true]*//*
-      x=>x.s("square").decay(slider(0.7645,.5,1)),
-      *//*end*/
+      /*mute squareBass [false]*/
+      x=>x.s("square").decay(slider(0.5,.5,1)),
+      /*end*/
       /*mute sineBass [true]*//*
       x=>x.s("sine").adsr(0,.3,.1,.1).postgain(.8).orbit(4),
       *//*end*/
@@ -85,19 +85,19 @@ let wall = chord(thechords).voicing()
     /*mute bpfWall [true]*//* 
     .bpf("<800 800 850 900>/2").bpenv("<4 4 4 3>/2").bpq("<9 9 7 8>/2").bpattack("<.2 .3 .2 .4>/2")
     *//*end*/
-    /*mute lpfWall [true]*//*
+    /*mute lpfWall [false]*/
     .lfo({c: 'lpf', shape: "<triange triangle sine saw>/2", sync: "<1.6 8>/2"})
     .lpf("<800 800 850 900>/2").lpenv("<4 4 4 3>/2").lpq("<9 9 7 8>/2").lpattack("<.2 .3 .2 .4>/2")
-    *//*end*/
+    /*end*/
     .decay("<3.8 3.8 3.8 3.5>/2")
     .attack("<.1 .4 .2 .15>/2")
     .layer(
       /*mute sawtoothWall [true]*//*
-      x=>x.s("sawtooth").vib(1),
+      x=>x.s("sawtooth"),/*this is left out because vibrato makes it lose memory*//*.vib(1),
       *//*end*/
-      /*mute squareWall [true]*//*
+      /*mute squareWall [false]*/
       x=>x.s("square"),
-      *//*end*/
+      /*end*/
       x=>x.s("triangle").vowel("<i o u e>/2").room(3)
     )
     .orbit("<3 3 3 2>/2")
@@ -114,7 +114,7 @@ let wall = chord(thechords).voicing()
 //#regionintro
 //sawtoothWall || squareWall || lpfWall => [OFF]
 //squareBass || sineBass => [OFF]
-$: arrange(
+_$: arrange(
     [1, wall],
     [1, stab],
 )
@@ -182,7 +182,7 @@ _$: stack(
   stab,
   jb.mask("<1!2 0!5 1!1>"),
   bottom.mask("<1!4 0!4>").undegradeBy(.3),
-  broke.hpf(slider,175,175,450)),
+  broke.hpf(slider,175,175,450),
   tamb,
 ).spectrum({speed:7})
 //#endregion
@@ -201,7 +201,7 @@ _$: stack(
 
 //#regionbreakdown
 //sineBass [OFF]
-_$: stack(
+$: stack(
   wall.mask("<1!4 0!4>").color("<purple cyan>/2"),
   stab.color("<blue purple cyan yellow>/2"),
   jb,
@@ -211,10 +211,10 @@ _$: stack(
 ).spectrum({speed:6})
 
 
-$: stack(
+_$: stack(
   stab.color("<blue purple cyan yellow>/2"),
   jb,
-  broke.hpf(slider(440.4,250,450)),
+  broke.hpf(slider(450,250,450)),
   tamb,
 ).spectrum({speed:4})
 

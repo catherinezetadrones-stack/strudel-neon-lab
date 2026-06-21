@@ -14,7 +14,10 @@ a dark acid-techno loop that matches the aesthetic.
 
 ## Architecture
 
-Intentionally tiny — there is no build step for the app code:
+Intentionally tiny — there is no build step for the **web** app code (the browser still
+loads `index.html` directly via Vite). A thin **Tauri** desktop shell wraps the same
+`index.html` for a native window; see "Desktop app (Tauri)" below. The two run from one
+codebase (dual-mode) — `index.html` detects Tauri at runtime and adapts file I/O only.
 
 - `index.html` — the entire app. It loads the `@strudel/repl` web component from a CDN
   (`<script src="https://unpkg.com/@strudel/repl@latest">`) and embeds a `<strudel-editor>`.
@@ -56,27 +59,57 @@ Intentionally tiny — there is no build step for the app code:
   Creating a block is the **+ Block** toolbar button (`addBlockFromSelection`). (The old top
   `blocks-rail` row is gone; `renderRail` is an inert guarded no-op.)
 - **File open/save:** an inline script adds a toolbar (Open / Save / Save As) plus shortcuts
-  (Ctrl+O / Ctrl+S / Ctrl+Shift+S) backed by the **File System Access API** so Save writes
-  back to the same on-disk file. Reads/writes editor text via `editor.code` /
-  `editor.setCode()`. Firefox lacks the API → falls back to `<input type=file>` (open) and
-  a Blob download (save). Dirty state is tracked by polling `editor.code` against the last
-  saved text (magenta dot + `beforeunload` warning). Undo/redo is CodeMirror's own
-  (Ctrl+Z / Ctrl+Shift+Z) — don't reimplement it.
+  (Ctrl+O / Ctrl+S / Ctrl+Shift+S). It has **three** backends, chosen at runtime:
+  (1) **Tauri desktop** (`isTauri`, detected via `window.__TAURI_INTERNALS__`) → native OS
+  dialogs (`@tauri-apps/plugin-dialog` `open`/`save`) plus Rust `read_text_file` /
+  `write_text_file` commands; the open file's absolute path is held in `currentPath`.
+  (2) **Chromium browser** → the **File System Access API** (`fileHandle`), writing back to
+  the same on-disk file. (3) **Firefox** → `<input type=file>` (open) and a Blob download
+  (save). Reads/writes editor text via `editor.code` / `editor.setCode()`. Dirty state is
+  tracked by polling `editor.code` against the last saved text (magenta dot + `beforeunload`
+  warning). Undo/redo is CodeMirror's own (Ctrl+Z / Ctrl+Shift+Z) — don't reimplement it.
 - **Save hot-reloads playback:** after a successful save the script calls
   `reevaluateIfPlaying()`, which runs `editor.evaluate()` only when
   `editor.repl.scheduler.started` is true. So saving a running pattern updates the sound
   live (Strudel re-evals in place); saving while stopped stays silent.
 - `patterns/` — saved Strudel patterns as `.js` files. `.js` is the preferred extension
   (JS-flavored syntax → highlighting + tooling); the pickers also accept `.txt`/`.strudel`.
-- `package.json` — only dev dependency is **Vite**, used purely as a static dev server
-  with hot reload.
+- `package.json` — dev deps are **Vite** (static dev server / production bundler) and
+  **@tauri-apps/cli**; runtime deps are the Tauri JS APIs (`@tauri-apps/api`,
+  `@tauri-apps/plugin-dialog`) used only by the desktop bridge.
 - Strudel itself is **not** an npm dependency here; it comes from the CDN at runtime.
+
+### Desktop app (Tauri)
+
+- **Why Tauri:** Strudel is a web/WebAudio project, so every shell (browser tab, PWA,
+  Electron, Tauri) runs the *same* engine — raw audio/render perf is roughly equal. Tauri
+  wins on **footprint**: it uses the OS WebView (WebView2, built into Windows 11) instead of
+  bundling Chromium, giving a ~10MB native binary and a dedicated, chrome-free process.
+- `src-tauri/` — the Rust shell (Tauri v2). `tauri.conf.json` points `devUrl` at the Vite
+  server (`http://localhost:5180`) and `frontendDist` at `../dist`; `beforeDevCommand` /
+  `beforeBuildCommand` run `npm run dev` / `npm run build`. **CSP is `null` (disabled)** on
+  purpose: Strudel loads from unpkg, pulls samples from GitHub/Freesound/Shabda, and uses
+  `eval`/`Function` (+WASM) to evaluate patterns — a strict CSP would block it. Fine for a
+  local sandbox; tighten to an allowlist only if ever distributed.
+- **File I/O bridge:** the big app script is one *classic* `<script>`, so it can't resolve
+  bare `@tauri-apps` imports (Vite only rewrites *module* scripts). A small
+  `<script type="module">` at the end of `index.html` imports `open`/`save`/`invoke` and
+  exposes them as `window.__strudelTauri`; the classic script calls through that. Actual disk
+  I/O is two app-defined Rust commands (`read_text_file`/`write_text_file`, `std::fs`) in
+  `src-tauri/src/lib.rs` — app commands bypass the capability ACL, so they read/write any
+  user-picked path with no `fs`-scope config. The dialog plugin needs `dialog:default` in
+  `src-tauri/capabilities/default.json`.
+- **Known gap:** in a packaged build (`frontendDist` = `dist/`), runtime `fetch`es of repo
+  files like the `patterns/` switch-angel prelude won't resolve (they're not in `dist`).
+  Works under `npm run app:dev` (Vite serves the project root). Bundling those is future work.
 
 ## Commands
 
 - `npm install` — one-time setup.
-- `npm run dev` — start the Vite dev server (http://localhost:5173).
-- `npm run build` / `npm run preview` — production build and preview (rarely needed for a sandbox).
+- `npm run dev` — start the Vite dev server (http://localhost:5180) for the **browser**.
+- `npm run build` / `npm run preview` — production build and preview.
+- `npm run app:dev` — launch the **Tauri desktop** app (runs Vite + native window, hot reload).
+- `npm run app:build` — build a native desktop binary/installer (`src-tauri/target/release`).
 
 ## Working with Strudel patterns
 

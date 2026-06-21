@@ -677,10 +677,20 @@ stack(
         // Supported in Chromium browsers (Chrome/Edge). Firefox falls back to
         // upload (open) and download (save).
         var supportsFS = typeof window.showOpenFilePicker === "function";
+        // Running inside the Tauri desktop shell? Its bootstrap always injects this
+        // global (independent of withGlobalTauri). When true we route Open/Save through
+        // native OS dialogs + Rust commands instead of the browser File System Access API.
+        var isTauri = typeof window.__TAURI_INTERNALS__ !== "undefined";
 
-        var fileHandle = null; // FileSystemFileHandle once a real file is open
+        var fileHandle = null; // FileSystemFileHandle once a real file is open (browser)
+        var currentPath = null; // absolute on-disk path of the open file (Tauri)
         var lastSaved = null; // editor text as of last open/save (dirty baseline)
         var fileName = "untitled";
+
+        // Native picker filters (Tauri dialog). Mirrors `fileTypes` used by the browser.
+        var TAURI_FILTERS = [{ name: "Strudel / JavaScript", extensions: ["js", "txt", "strudel"] }];
+        // Last path segment of a native path (handles both \\ and / separators).
+        function baseName(p) { return String(p).split(/[\\/]/).pop(); }
 
         var els = {
           name: document.getElementById("file-name"),
@@ -1436,12 +1446,28 @@ stack(
           lastRailSig = null;
           setCode(NEW_TEMPLATE, true);
           fileHandle = null;
+          currentPath = null;
           lastSaved = NEW_TEMPLATE;
           setFileName("untitled");
         }
 
         async function openFile() {
           try {
+            if (isTauri) {
+              var T = window.__strudelTauri;
+              if (!T) return setStatus("desktop file bridge not ready yet", true);
+              var path = await T.open({ multiple: false, filters: TAURI_FILTERS });
+              if (!path) return; // user cancelled
+              var text = await T.invoke("read_text_file", { path: path });
+              collapsedBodies = {};
+              lastRailSig = null;
+              setCode(text, true);
+              currentPath = path;
+              lastSaved = text;
+              setFileName(baseName(path));
+              setStatus("opened " + baseName(path));
+              return;
+            }
             if (supportsFS) {
               var picked = await window.showOpenFilePicker({ multiple: false });
               fileHandle = picked[0];
@@ -1465,6 +1491,18 @@ stack(
 
         async function saveFile() {
           try {
+            if (isTauri) {
+              var T = window.__strudelTauri;
+              if (!T) return setStatus("desktop file bridge not ready yet", true);
+              if (!currentPath) return saveAsFile();
+              var code = reconstructFullCode();
+              await T.invoke("write_text_file", { path: currentPath, contents: code });
+              lastSaved = code;
+              refreshDirty();
+              setStatus("saved " + fileName);
+              reevaluateIfPlaying();
+              return;
+            }
             if (!supportsFS) return saveFallback();
             if (!fileHandle) return saveAsFile();
             var code = reconstructFullCode();
@@ -1485,6 +1523,23 @@ stack(
 
         async function saveAsFile() {
           try {
+            if (isTauri) {
+              var T = window.__strudelTauri;
+              if (!T) return setStatus("desktop file bridge not ready yet", true);
+              var path = await T.save({
+                defaultPath: fileName === "untitled" ? "my-pattern.js" : fileName,
+                filters: TAURI_FILTERS,
+              });
+              if (!path) return; // user cancelled
+              var code = reconstructFullCode();
+              await T.invoke("write_text_file", { path: path, contents: code });
+              currentPath = path;
+              lastSaved = code;
+              setFileName(baseName(path));
+              setStatus("saved " + baseName(path));
+              reevaluateIfPlaying();
+              return;
+            }
             if (!supportsFS) return saveFallback();
             fileHandle = await window.showSaveFilePicker({
               suggestedName: fileName === "untitled" ? "my-pattern.js" : fileName,
@@ -2160,6 +2215,18 @@ stack(
           if (attempt < 200) setTimeout(function () { whenReady(attempt + 1); }, 100);
         })();
       })();
+    </script>
+    <!--
+      Desktop (Tauri) file bridge. This is a *module* script so Vite resolves the
+      bare @tauri-apps imports (dev: from node_modules, build: bundled into dist).
+      The big app script above is a classic script and can't resolve bare specifiers,
+      so we expose the few APIs it needs on window.__strudelTauri. In a plain browser
+      the imports still resolve via Vite but are never called (isTauri is false).
+    -->
+    <script type="module">
+      import { open, save } from "@tauri-apps/plugin-dialog";
+      import { invoke } from "@tauri-apps/api/core";
+      window.__strudelTauri = { open: open, save: save, invoke: invoke };
     </script>
   </body>
 </html>
