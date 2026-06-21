@@ -801,6 +801,22 @@ stack(
           return blocks;
         }
 
+        // Number of source lines in a block's body, for the sheet-header count.
+        // Expanded: the visible span between the markers. Collapsed: the body lives in
+        // collapsedBodies (the visible buffer only holds the //#collapsed marker), so count
+        // the stashed text instead — a collapsed+muted body carries a leading //#muted
+        // marker line that isn't real content, so don't count it.
+        function blockBodyLineCount(b) {
+          if (b.collapsed) {
+            var body = collapsedBodies[b.label];
+            if (!body) return 0;
+            var arr = body.split("\n");
+            if (arr[0] !== undefined && arr[0].trim() === MUTED) return Math.max(0, arr.length - 1);
+            return arr.length;
+          }
+          return Math.max(0, b.end - b.bodyStart);
+        }
+
         // The visible buffer with every collapsed block expanded back to full source.
         // Used for evaluating, saving, syntax-checking and dirty tracking, so collapse
         // is purely a view concern.
@@ -1278,7 +1294,7 @@ stack(
                 // line count / state
                 var meta = document.createElement("span");
                 meta.className = "sh-meta";
-                meta.textContent = b.muted ? "muted" : b.collapsed ? "hidden" : Math.max(0, b.end - b.bodyStart) + "L";
+                meta.textContent = b.muted ? "muted" : blockBodyLineCount(b) + "L";
                 // mute / unmute (comments out the block body)
                 var mute = document.createElement("button");
                 mute.className = "sh-mute";
@@ -2192,6 +2208,68 @@ stack(
                 return p;
               };
               editor.__wrappedEval = true;
+            }
+            // Fix the CodeMirror crash when evaluating with blocks collapsed.
+            // Collapsed blocks evaluate the reconstructed *full* code (above), which is
+            // longer than the visible buffer. Strudel then stores the eval's editor
+            // decorations on `editor.widgets` (slider/pianoroll boxes) and
+            // `editor.miniLocations` (highlight ranges) using FULL-code character offsets,
+            // and renders them onto the shorter visible doc. Any offset past the end of the
+            // visible doc makes CM throw "Position N is out of range for changeset of
+            // length M" — once when the widgets are first applied, and then again on every
+            // later view update (mousemove/keydown re-maps the stored decorations). The
+            // decorations belong to hidden text and audio is unaffected, so intercept the
+            // assignments and drop out-of-range entries while anything is collapsed; in the
+            // normal (nothing-collapsed) case the arrays pass through untouched.
+            if (editor && !editor.__decoGuarded) {
+              var _visibleLen = function () { return getCode().length; };
+              var _collapsed = function () { return Object.keys(collapsedBodies).length > 0; };
+              var _inRange = function (a, b) { var max = _visibleLen(); return a <= max && b <= max; };
+              var _filterWidgets = function (arr) {
+                if (!Array.isArray(arr) || !_collapsed()) return arr;
+                return arr.filter(function (w) {
+                  var f = w && w.from != null ? w.from : (w && w.to != null ? w.to : 0);
+                  var t = w && w.to != null ? w.to : f;
+                  return _inRange(f, t);
+                });
+              };
+              var _filterMini = function (arr) {
+                if (!Array.isArray(arr) || !_collapsed()) return arr;
+                return arr.filter(function (loc) { return Array.isArray(loc) && _inRange(loc[0], loc[1]); });
+              };
+              var _w = editor.widgets, _m = editor.miniLocations;
+              Object.defineProperty(editor, "widgets", {
+                configurable: true,
+                get: function () { return _w; },
+                set: function (v) { _w = _filterWidgets(v); },
+              });
+              Object.defineProperty(editor, "miniLocations", {
+                configurable: true,
+                get: function () { return _m; },
+                set: function (v) { _m = _filterMini(v); },
+              });
+              editor.__decoGuarded = true;
+            }
+            // Belt-and-suspenders: should an out-of-range decoration ever still reach a
+            // dispatch while collapsed, swallow only that specific benign RangeError so it
+            // can't break the editor; real range bugs (or any error when nothing is
+            // collapsed) still surface.
+            if (editor.editor && !editor.editor.__guardedDispatch) {
+              var _view = editor.editor;
+              var _origDispatch = _view.dispatch.bind(_view);
+              _view.dispatch = function () {
+                try {
+                  return _origDispatch.apply(null, arguments);
+                } catch (e) {
+                  if (
+                    e instanceof RangeError &&
+                    /out of range for changeset/.test(e.message) &&
+                    Object.keys(collapsedBodies).length
+                  ) return;
+                  throw e;
+                }
+              };
+              _view.__guardedDispatch = true;
             }
             // Establish the dirty baseline, then watch for edits.
             lastSaved = editor.code;
