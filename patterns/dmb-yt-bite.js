@@ -6,7 +6,7 @@ samples('github:bubobubobubobubo/dough-fox')
 samples({'reese':'https://cdn.freesound.org/previews/236/236932_4212462-lq.mp3'})
 samples({rhodes: {d3:'https://cdn.freesound.org/previews/4/4191_7740-lq.mp3'}})
 
-//#regionbasis
+//#region basis
 //#collapsed
 let thechords = "<E13sus _  A13sus _ C13sus _ G13sus _ >"
 
@@ -25,7 +25,7 @@ let break3 = s("riffin:0/2").fit().scrub(seq1.div(8))
 //#endregion
 
 
-//#regiondrums and breaks
+//#region drums and breaks
 //#collapsed
 $: s("bd").struct(kick).duckorbit(4).duckattack(.001).duckdepth(2).postgain(0)
 let bottom = s("bd:14").struct(kick).duckorbit(3).duckattack("<.2 .1 .3 .1>").duckdepth("<.9 .9 .9 .6>").postgain(1.3)
@@ -47,7 +47,7 @@ let tamb = s("[ftamborine:0]*16").struct("<1>*16")
 //#endregion
 
 
-//#regionjbsmooth bass
+//#region jbsmooth bass
 //#collapsed
 let jb = note("<[1*1 _ 1*1 _ _ ] [4*2] [3*1 _ 3*1_ _ _ ] 6 [3*1 _ 3*1_ _ _ ] 4 [-4*1 _ -4*1_ _ _] -1>/1")
     .layer(
@@ -75,7 +75,7 @@ let jb = note("<[1*1 _ 1*1 _ _ ] [4*2] [3*1 _ 3*1_ _ _ ] 6 [3*1 _ 3*1_ _ _ ] 4 [
 //#endregion
 
 
-//#regionkeys and pads
+//#region keys and pads
 //#collapsed
 let stab = pads
     .lfo({c: 'lpf', shape: "<sine triangle sine saw>/2"})
@@ -115,7 +115,7 @@ let wall = chord(thechords).voicing()
 //#regionArrangement below
 //#endregion
 
-//#regionintro
+//#region intro
 //sawtoothWall || squareWall || lpfWall => [OFF]
 //squareBass || sineBass => [OFF]
 _$: arrange(
@@ -132,7 +132,7 @@ _$: stack(
 ).spectrum({speed:2})
 //#endregion
 
-//#regionBuild
+//#region Build
 _$: stack(
   wall.color("<blue purple cyan yellow>/2"),
   stab.postgain(slider(0.32385,.25,.6)),
@@ -203,7 +203,7 @@ _$: stack(
 ).spectrum({speed:8})
 //#endregion
 
-//#regionbreakdown
+//#region breakdown
 //sineBass [OFF]
 $: stack(
   wall.mask("<1!4 0!4>").color("<purple cyan>/2"),
