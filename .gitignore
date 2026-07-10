@@ -3,6 +3,24 @@ dist
 .DS_Store
 dev-server.log
 
-# Large local media — not for version control
+# Large local media - not for version control
 strudel-video/
 *.mp4
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
+*.local
+
+# Editor / IDE personal preferences
+.vscode/
+.idea/
+*.code-workspace
+*.sublime-workspace
+*.sublime-project
+
+# OS cruft
+Thumbs.db
+ehthumbs.db
+Desktop.ini
